@@ -35,36 +35,28 @@
         <p id="demo"></p>
     </main>
 
-<script>
-  // target: November 26 at 7:00 (noon -> changed to 7am). Auto-select current year, advance to next year if already passed,
-  // but if it's still November 26 and past 7am call an open handler for you to implement.
+<script> 
   (function() {
-    var monthIndex = 10; // November (0-based)
+    var monthIndex = 10;
     var day = 26;
-    var hour = 7; // 7 AM
+    var hour = 7;
     var minute = 0;
 
-    // Open function for you to implement when it's Nov 26 and past 7 AM (same calendar day)
     function onSameDayAfterTarget(now) {
-      // TODO: implement custom behavior here.
-      // Example: show a special message, start an animation, disable the countdown, etc.
-      // 'now' is a Date object representing the current time.
+      // wip
       document.getElementById("demo").textContent = "It's past 7:00 AM on November 26 — custom handler not implemented.";
     }
 
     var now = new Date();
     var year = now.getFullYear();
 
-    // build this year's target
     var target = new Date(year, monthIndex, day, hour, minute, 0, 0);
 
-    // If it's still Nov 26 but past 7am, call the open handler and stop — user fills behavior.
     if (now.getMonth() === monthIndex && now.getDate() === day && now.getTime() > target.getTime()) {
       onSameDayAfterTarget(now);
       return;
     }
 
-    // If target already passed (not the special Nov 26 same-day case), snap to next year
     if (now >= target) {
       target = new Date(year + 1, monthIndex, day, hour, minute, 0, 0);
     }
@@ -90,10 +82,5 @@
     }, 1000);
   })();
 </script>
-
-    <footer>
-        <p>&copy; 2067 Chicken and Cheese</p>
-    </footer>
-    
 </body>
 </html>
