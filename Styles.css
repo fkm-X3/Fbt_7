@@ -81,18 +81,6 @@ button:active {
     transform: translateY(0);
 }
 
-/* Footer styles */
-footer {
-    background-color: #0078d7;
-    color: white;
-    text-align: center;
-    padding: 1rem;
-    position: fixed;
-    bottom: 0;
-    width: 100%;
-    box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
-}
-
 /* Image centering styles */
 .center {
     display: block;
