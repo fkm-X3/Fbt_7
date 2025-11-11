@@ -30,24 +30,40 @@
 
     <main>
         <h2>Time Remaining</h2>
-        <p>This clock counts down to November 26 at 12:00 PM. It will auto-adjust to the next upcoming November 26.</p>
+        <p>This clock counts down to November 26 at 7:00 AM. It will auto-adjust to the next upcoming November 26.</p>
         <p id="demo"></p>
     </main>
 
 <script>
-  // target: November 26 at 12:00 (noon). Auto-select current year, advance to next year if already passed.
+  // target: November 26 at 7:00 (noon -> changed to 7am). Auto-select current year, advance to next year if already passed,
+  // but if it's still November 26 and past 7am call an open handler for you to implement.
   (function() {
     var monthIndex = 10; // November (0-based)
     var day = 26;
-    var hour = 12;
+    var hour = 7; // 7 AM
     var minute = 0;
+
+    // Open function for you to implement when it's Nov 26 and past 7 AM (same calendar day)
+    function onSameDayAfterTarget(now) {
+      // TODO: implement custom behavior here.
+      // Example: show a special message, start an animation, disable the countdown, etc.
+      // 'now' is a Date object representing the current time.
+      document.getElementById("demo").textContent = "It's past 7:00 AM on November 26 — custom handler not implemented.";
+    }
+
     var now = new Date();
     var year = now.getFullYear();
 
     // build this year's target
     var target = new Date(year, monthIndex, day, hour, minute, 0, 0);
 
-    // if target is already passed or it's exactly the same moment, snap to next year
+    // If it's still Nov 26 but past 7am, call the open handler and stop — user fills behavior.
+    if (now.getMonth() === monthIndex && now.getDate() === day && now.getTime() > target.getTime()) {
+      onSameDayAfterTarget(now);
+      return;
+    }
+
+    // If target already passed (not the special Nov 26 same-day case), snap to next year
     if (now >= target) {
       target = new Date(year + 1, monthIndex, day, hour, minute, 0, 0);
     }
