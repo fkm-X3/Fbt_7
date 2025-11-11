@@ -18,19 +18,41 @@
         <a href="time_till_date.html">Time till date</a>
     </nav>
 
-    <main>
-        <h2>Chat Bot</h2>
-        <p>Welcome to the chat bot page. Here you can interact with the AI chat bot. Make sure the Ollama server is running to use this feature.</p>
-        <button onclick="startChat()">Start Chatting</button>
-    </main>
+    <textarea id="promptInput" rows="5" cols="50" placeholder="Enter your prompt..."></textarea><br>
+    <button onclick="generateResponse()">Generate</button>
+    <div id="responseOutput"></div>
+
+    <script>
+        async function generateResponse() {
+            const prompt = document.getElementById('promptInput').value;
+            const responseOutput = document.getElementById('responseOutput');
+            responseOutput.innerText = 'Generating response...';
+
+            try {
+                const response = await fetch('http://localhost:11434/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'mistral', // Replace with your desired model
+                        prompt: prompt,
+                        stream: false // Set to true for streaming responses
+                    }),
+                });
+
+                const data = await response.json();
+                responseOutput.innerText = data.response; // Assuming the response has a 'response' field
+            } catch (error) {
+                console.error('Error:', error);
+                responseOutput.innerText = 'Error generating response.';
+            }
+        }
+    </script>
+    </script>
 
     <footer>
         <p>&copy; 2067 Chicken and Cheese</p>
     </footer>
-
-    <script>
-        function startChat() {
-            // Placeholder function to start chat
-            alert("Chat bot functionality is not implemented in this snippet yet.");
-        }
-    </script>
+</body>
+</html>
