@@ -21,11 +21,13 @@ ctk.set_default_color_theme("blue")
 # Colors
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
-PURPLE = (128, 0, 128) # New Color for Special Attack Hitbox
 BLACK = (0, 0, 0) # Added for flashing effect
 WHITE = (255, 255, 255)
 YELLOW_RGB = (255, 255, 0)
 YELLOW_HEX = "#FFFF00"
+# Special Attack Colors (MUST be defined for both Pygame and CustomTkinter)
+PURPLE_TUPLE = (128, 0, 128) # For Pygame drawing
+PURPLE_HEX = "#800080"      # For CustomTkinter styling
 
 # Cube Size
 CUBE_SIZE = 50
@@ -40,6 +42,13 @@ red_y = HEIGHT // 2 - CUBE_SIZE // 2
 MOVE_SPEED = 5
 # AI Movement Speed (Slightly slower for balance)
 AI_MOVE_SPEED = 3
+
+# --- AI BASIC ATTACK CONSTANTS (New for Contact Damage) ---
+AI_BASIC_ATTACK_RANGE = 70      # The distance at which the AI initiates a basic attack
+AI_BASIC_WINDUP_MS = 300        # Black flash duration before attack (The "tell")
+AI_BASIC_ACTIVE_MS = 100        # Duration the attack hitbox is active
+AI_BASIC_COOLDOWN_MS = 500      # Cooldown after an active attack
+# ---------------------------------
 
 # --- CHARGE ATTACK CONSTANTS ---
 CHARGE_SPEED = 15              # Speed during charge
@@ -93,13 +102,17 @@ game_state = {
     'move_speed': MOVE_SPEED,       
     'game_over': False,
     'red_cube_mode': RED_CUBE_MODE, # AI Mode (e.g., Maintain, Charge)
-    # --- NEW CHARGE STATE VARIABLES ---
+    # --- CHARGE STATE VARIABLES ---
     'charge_state': 'Idle',       # 'Idle', 'Windup', 'Charging', 'Endlag'
     'flash_timer': 0,             # Timer for managing flash duration
     'flash_count': 0,             # How many flashes have occurred
     'charge_dx': 0,               # Locked X-direction for charge
     'charge_dy': 0,               # Locked Y-direction for charge
     'endlag_timer': 0.0,          # Timer for the 2-second cooldown after charge
+
+    # --- NEW BASIC ATTACK STATE VARIABLES (for contact damage) ---
+    'ai_basic_attack_state': 'Ready', # 'Ready', 'Windup', 'Active', 'Cooldown'
+    'ai_basic_attack_timer': 0.0,
 
     # --- NEW SPECIAL ATTACK STATE VARIABLES ---
     'purple_hitbox_active': False,
@@ -116,15 +129,24 @@ def draw_cube(x, y, color):
 
 # Function to determine the Red Cube's display color (for flashing)
 def get_red_cube_color(state):
-    """Determines the color of the Red Cube based on its charge state."""
-    # Red cube is always BLACK during endlag as a visual stun indicator
+    """Determines the color of the Red Cube based on its charge state and basic attack state."""
+    
+    # Priority 1: Endlag (Stun) - Always BLACK
     if state['charge_state'] == 'Endlag':
         return BLACK
     
+    # Priority 2: Charge Windup - Flashing BLACK/RED
     if state['charge_state'] == 'Windup':
         # Flash black on odd flash counts
         if state['flash_count'] % 2 != 0: 
              return BLACK
+        return RED # Otherwise show RED during charge windup
+        
+    # Priority 3: Basic Attack Windup (The new pre-attack flash)
+    if state['ai_basic_attack_state'] == 'Windup':
+        return BLACK # Flash black during windup duration
+
+    # Default color
     return RED
 
 
@@ -430,7 +452,7 @@ while running:
     
     if cooldown_time_s > 0:
         tk_cooldown_text.set(f"Special Attack: {cooldown_time_s:.1f}s CD")
-        cooldown_label.configure(fg_color=PURPLE, text_color="white") # Purple during CD
+        cooldown_label.configure(fg_color=PURPLE_HEX, text_color="white") 
     else:
         tk_cooldown_text.set("Special Attack: READY (SPACE)")
         cooldown_label.configure(fg_color="green", text_color="white") # Green when ready
@@ -443,6 +465,40 @@ while running:
         
         target_x, target_y = game_state['blue_x'], game_state['blue_y']
 
+        # --- AI BASIC ATTACK STATE MACHINE (New) ---
+        # Basic attack is paused during the 2-second Charge Endlag state
+        if game_state['charge_state'] != 'Endlag':
+            
+            # Distance to player (used for both movement and attack initiation)
+            distance_to_player = calculate_distance(game_state['red_x'], game_state['red_y'], game_state['blue_x'], game_state['blue_y'])
+            
+            if game_state['ai_basic_attack_state'] == 'Ready':
+                # Initiate basic attack windup if close enough
+                if distance_to_player < AI_BASIC_ATTACK_RANGE:
+                    game_state['ai_basic_attack_state'] = 'Windup'
+                    game_state['ai_basic_attack_timer'] = AI_BASIC_WINDUP_MS
+                    
+            elif game_state['ai_basic_attack_state'] == 'Windup':
+                game_state['ai_basic_attack_timer'] -= dt
+                if game_state['ai_basic_attack_timer'] <= 0:
+                    # After windup, enter the brief active hit window
+                    game_state['ai_basic_attack_state'] = 'Active'
+                    game_state['ai_basic_attack_timer'] = AI_BASIC_ACTIVE_MS
+                    
+            elif game_state['ai_basic_attack_state'] == 'Active':
+                game_state['ai_basic_attack_timer'] -= dt
+                # Collision check for damage is performed below in the main collision block
+                if game_state['ai_basic_attack_timer'] <= 0:
+                    # After hit window, enter cooldown
+                    game_state['ai_basic_attack_state'] = 'Cooldown'
+                    game_state['ai_basic_attack_timer'] = AI_BASIC_COOLDOWN_MS
+                    
+            elif game_state['ai_basic_attack_state'] == 'Cooldown':
+                game_state['ai_basic_attack_timer'] -= dt
+                if game_state['ai_basic_attack_timer'] <= 0:
+                    game_state['ai_basic_attack_state'] = 'Ready'
+        
+        # --- CHARGE ATTACK LOGIC ---
         if game_state['charge_state'] == 'Idle':
             # 3.1. Idle State: Check for random charge initiation
             
@@ -546,7 +602,16 @@ while running:
 
     # Collision Detection (Red Cube attacking Blue Cube)
     # This is the physical contact damage between the two cubes
-    if (game_state['blue_x'] < game_state['red_x'] + CUBE_SIZE and
+    
+    # NEW LOGIC: Damage only applies if the AI's basic attack is in the 'Active' state, 
+    # AND the AI is not stunned (Endlag), allowing for punishes.
+    can_ai_deal_contact_damage = (
+        game_state['ai_basic_attack_state'] == 'Active' and 
+        game_state['charge_state'] != 'Endlag'
+    )
+    
+    if (can_ai_deal_contact_damage and
+        game_state['blue_x'] < game_state['red_x'] + CUBE_SIZE and
         game_state['blue_x'] + CUBE_SIZE > game_state['red_x'] and
         game_state['blue_y'] < game_state['red_y'] + CUBE_SIZE and
         game_state['blue_y'] + CUBE_SIZE > game_state['red_y']):
@@ -578,8 +643,8 @@ while running:
     
     # Draw the lingering purple hitbox first (if active)
     if game_state['purple_hitbox_active'] and game_state['purple_hitbox_rect']:
-        # Draw the purple rect
-        pygame.draw.rect(screen, PURPLE, game_state['purple_hitbox_rect'])
+        # Draw the purple rect using the Pygame tuple
+        pygame.draw.rect(screen, PURPLE_TUPLE, game_state['purple_hitbox_rect'])
     
     if game_state['red_active']:
         # Use the dynamic color function here
