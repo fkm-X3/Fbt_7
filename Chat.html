@@ -3,13 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Placeholder</title>
+    <title>Fbt_7 Chat</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 120px);
+            margin: 2rem auto;
+            max-width: 900px;
+        }
+
+        #chat-box {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+
+        .message {
+            padding: 10px 15px;
+            border-radius: 8px;
+            max-width: 80%;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .user {
+            align-self: flex-end;
+            background: #0078d7;
+            color: white;
+        }
+
+        .assistant {
+            align-self: flex-start;
+            background: #e8e8e8;
+            color: #333;
+        }
+
+        #input-area {
+            display: flex;
+            padding: 10px;
+            gap: 10px;
+            background: #f0f4f8;
+            border-top: 1px solid #ddd;
+            border-radius: 0 0 8px 8px;
+        }
+
+        #message-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background: white;
+            color: #333;
+            font-size: 1rem;
+        }
+
+        #send-button {
+            background-color: #0078d7;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.3s ease;
+        }
+
+        #send-button:hover {
+            background-color: #005fa3;
+        }
+    </style>
 </head>
 <body>
 
     <header>
-        <h1>chat thing</h1>
+        <h1>Mistral Chat</h1>
     </header>
 
     <nav>
@@ -19,15 +94,29 @@
         <a href="Settings.html">Settings</a>
     </nav>
 
-    <textarea id="promptInput" rows="5" cols="50" placeholder="Enter your prompt..."></textarea><br>
-    <button onclick="generateResponse()">Generate</button>
-    <div id="responseOutput"></div>
+    <div id="chat-container">
+        <div id="chat-box"></div>
+        <div id="input-area">
+            <input type="text" id="message-input" placeholder="Type your message..." />
+            <button id="send-button">Send</button>
+        </div>
+    </div>
 
     <script>
-        async function generateResponse() {
-            const prompt = document.getElementById('promptInput').value;
-            const responseOutput = document.getElementById('responseOutput');
-            responseOutput.innerText = 'Generating response...';
+        const chatBox = document.getElementById('chat-box');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+
+            if (!message) {
+                alert('Please enter a message.');
+                return;
+            }
+
+            appendMessage('user', message);
+            messageInput.value = '';
 
             try {
                 const response = await fetch('http://localhost:11434/api/generate', {
@@ -36,20 +125,34 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        model: 'mistral', // Replace with your desired model
-                        prompt: prompt,
-                        stream: false // Set to true for streaming responses
+                        model: 'mistral',
+                        prompt: message,
+                        stream: false
                     }),
                 });
 
                 const data = await response.json();
-                responseOutput.innerText = data.response; // Assuming the response has a 'response' field
+                if (!response.ok) throw new Error('API request failed');
+
+                appendMessage('assistant', data.response);
             } catch (error) {
-                console.error('Error:', error);
-                responseOutput.innerText = 'Error generating response.';
+                appendMessage('assistant', `⚠️ Error: ${error.message}`);
             }
         }
+
+        function appendMessage(role, text) {
+            const msg = document.createElement('div');
+            msg.className = `message ${role}`;
+            msg.textContent = text;
+            chatBox.appendChild(msg);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
     </script>
-    </script>
+
 </body>
 </html>
