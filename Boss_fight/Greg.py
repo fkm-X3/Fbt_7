@@ -23,12 +23,11 @@ BLUE = (0, 0, 255)
 RED = (255, 0, 0)
 BLACK = (0, 0, 0) # Added for flashing effect
 WHITE = (255, 255, 255)
-CYAN = (0, 255, 255) # NEW: For the 4th Beam flash
+CYAN = (0, 255, 255) # For the 4th Beam flash
 # Special Attack Colors (MUST be defined for both Pygame and CustomTkinter)
-PURPLE_TUPLE = (128, 0, 128) # For Pygame drawing (Blue Cube Slash)
+PURPLE_TUPLE = (128, 0, 128) # For Pygame drawing
 PURPLE_HEX = "#800080"      # For CustomTkinter styling
-# AI Special Attack Color
-YELLOW_TUPLE = (255, 255, 0) # For Pygame drawing (Red Cube Slash)
+# AI Special Attack Color - YELLOW NO LONGER USED
 # ----------------------------------------
 
 # Cube Size
@@ -62,30 +61,30 @@ ENDLAG_DURATION_MS = 2000      # 2 seconds of cooldown after charge
 CHARGE_ATTACK_DAMAGE = 25      # Damage applied upon contact during Charging state
 # -------------------------------
 
-# --- AI SLASH/BEAM WINDUP CONSTANTS ---
-# 3 blinks = 3 Black flashes, which requires 7 state transitions (R->B->R->B->R->B->R)
+# --- AI BEAM WINDUP CONSTANTS (Slash logic removed) ---
+# 3 blinks + 1 cyan flash
 AI_SLASH_FLASH_CYCLES = 3       
-AI_BEAM_RANGE = 300             # NEW: Distance threshold to switch from Slash to Beam
-AI_FLASH_DURATION_MS = 150      # Slightly faster flash for the slash/beam
+AI_FLASH_DURATION_MS = 150      
+AI_BEAM_RANGE = 300             # Range is irrelevant, but kept as a constant
+AI_BEAM_WIDTH = 10              
+AI_BEAM_LENGTH = 700            
+AI_BEAM_SPEED = 0.1             
 # -------------------------------------
 
-# Player Attack Damage (used for contact if a basic attack was active, but now only for charge)
+# Player Attack Damage 
 ATTACK_DAMAGE = 20
 
 # --- BLUE CUBE (PLAYER) SPECIAL ATTACK CONSTANTS ---
 SPECIAL_ATTACK_DAMAGE = 25
-HITBOX_DURATION_MS = 500       # 0.5 seconds (Visual linger)
-SPECIAL_ATTACK_COOLDOWN_MS = 3000 # 3.0 seconds
+HITBOX_DURATION_MS = 500       
+SPECIAL_ATTACK_COOLDOWN_MS = 3000 
 # --------------------------------
 
 # --- RED CUBE (AI) SPECIAL ATTACK CONSTANTS ---
-AI_SPECIAL_ATTACK_DAMAGE = 30 # Used for both Slash and Beam
+AI_SPECIAL_ATTACK_DAMAGE = 30 # Used only for Beam
 AI_SPECIAL_HITBOX_DURATION_MS = 600
-AI_SPECIAL_ATTACK_COOLDOWN_MS = 4000 # 4.0 seconds (Slightly longer cooldown for balance)
-AI_SLASH_ATTACK_RANGE = 200        # AI will trigger Slash if the player is within this range
-AI_BEAM_WIDTH = 10                 # Width of the beam
-AI_BEAM_LENGTH = 700               # Length of the beam
-AI_BEAM_SPEED = 0.1                # Damage application speed (not movement speed)
+AI_SPECIAL_ATTACK_COOLDOWN_MS = 4000 
+AI_SPECIAL_ATTACK_RANGE = 200        # AI will trigger if the player is within this range
 # ----------------------------------------------------
 
 # Player States (Initial)
@@ -111,31 +110,31 @@ initial_game_state = {
     'attack_damage': ATTACK_DAMAGE, 
     'move_speed': MOVE_SPEED,       
     'game_over': False,
-    'red_cube_mode': INITIAL_RED_CUBE_MODE, # AI Mode (e.g., Maintain, Charge)
+    'red_cube_mode': INITIAL_RED_CUBE_MODE, 
     
     # --- CHARGE STATE VARIABLES ---
-    'charge_state': 'Idle',       # 'Idle', 'Windup', 'Charging', 'Endlag'
-    'flash_timer': 0,             # Timer for managing flash duration (shared for both special attacks)
-    'flash_count': 0,             # How many flashes have occurred (shared for both special attacks)
-    'charge_dx': 0,               # Locked X-direction for charge
-    'charge_dy': 0,               # Locked Y-direction for charge
-    'endlag_timer': 0.0,          # Timer for the 2-second cooldown after charge
+    'charge_state': 'Idle',       
+    'flash_timer': 0,             
+    'flash_count': 0,             
+    'charge_dx': 0,               
+    'charge_dy': 0,               
+    'endlag_timer': 0.0,          
 
     # --- BLUE CUBE SPECIAL ATTACK STATE VARIABLES (Purple) ---
     'purple_hitbox_active': False,
-    'purple_hitbox_rect': None,    # Stores the pygame.Rect object for drawing
-    'hitbox_timer': 0,             # Tracks remaining time for the hitbox to linger
-    'last_direction': 'right',     # Tracks the direction blue was moving
+    'purple_hitbox_rect': None,    
+    'hitbox_timer': 0,             
+    'last_direction': 'right',     
+    'special_attack_cooldown_timer': 0,
 
-    # --- RED CUBE SPECIAL ATTACK STATE VARIABLES (Yellow/Cyan) ---
-    'ai_yellow_hitbox_active': False, # Used for the Slash attack
-    'ai_yellow_hitbox_rect': None,
-    'ai_cyan_beam_active': False,     # NEW: Used for the Beam attack
-    'ai_beam_angle': 0.0,             # NEW: Angle for the beam
+    # --- RED CUBE SPECIAL ATTACK STATE VARIABLES (Only Beam) ---
+    # Slash variables removed: ai_yellow_hitbox_active, ai_yellow_hitbox_rect
+    'ai_cyan_beam_active': False,     
+    'ai_beam_angle': 0.0,             
     'ai_hitbox_timer': 0,
     'ai_last_direction': 'left', 
     'ai_special_attack_cooldown_timer': 0,
-    'ai_attack_state': 'Idle',    # 'Idle', 'SlashWindup', 'BeamWindup' (NEW)
+    'ai_attack_state': 'Idle',    # 'Idle', 'SpecialWindup'
 }
 
 # Use a deep copy to ensure the game_state is a mutable dictionary separate from the initial template
@@ -149,34 +148,25 @@ def draw_cube(x, y, color):
 # Function to determine the Red Cube's display color (for flashing)
 def get_red_cube_color(state):
     """
-    Determines the color of the Red Cube based on its charge and slash states.
+    Determines the color of the Red Cube based on its charge and special attack states.
     """
     
-    # Priority 1: Slash Windup - Flashing BLACK/RED
-    if state['ai_attack_state'] == 'SlashWindup':
-        # Flash black on odd flash counts
-        if state['flash_count'] % 2 != 0: 
-             return BLACK
-        return RED # Otherwise show RED during slash windup
-
-    # Priority 2: Beam Windup - Flashing BLACK/RED, final flash is CYAN
-    # Note: AI_SLASH_FLASH_CYCLES * 2 = 6 state changes. The 7th is RED.
-    # We want 3 black flashes (6 states), then a 4th state (CYAN) at flash_count 7.
-    if state['ai_attack_state'] == 'BeamWindup':
-        # Check for the final CYAN flash state
-        if state['flash_count'] > (AI_SLASH_FLASH_CYCLES * 2): # flash_count > 6
+    # Priority 1: Special Attack Windup (now always the Beam pattern)
+    if state['ai_attack_state'] == 'SpecialWindup':
+        # Check for the final CYAN flash state (flash_count > 6)
+        if state['flash_count'] > (AI_SLASH_FLASH_CYCLES * 2): 
             return CYAN
             
         # Flash black on odd flash counts (up to 6)
         if state['flash_count'] % 2 != 0: 
              return BLACK
-        return RED # Otherwise show RED during beam windup
+        return RED # Otherwise show RED during windup
 
-    # Priority 3: Endlag (Stun) - Always BLACK
+    # Priority 2: Endlag (Stun) - Always BLACK
     if state['charge_state'] == 'Endlag':
         return BLACK
     
-    # Priority 4: Charge Windup - Flashing BLACK/RED
+    # Priority 3: Charge Windup - Flashing BLACK/RED
     if state['charge_state'] == 'Windup':
         # Flash black on odd flash counts
         if state['flash_count'] % 2 != 0: 
@@ -343,86 +333,31 @@ def do_special_attack():
     # 4. Start Cooldown
     game_state['special_attack_cooldown_timer'] = SPECIAL_ATTACK_COOLDOWN_MS
 
-# --- RED CUBE (AI) SPECIAL ATTACK ---
+# --- RED CUBE (AI) SPECIAL ATTACK (BEAM ONLY) ---
 
 def check_ai_special_attack_trigger(distance_to_player):
-    """Determines if the AI should try to use its special attack."""
-    # Must be ready (cooldown=0), idle (not stunned/charging/slashing), and within range
+    """Determines if the AI should try to use its special attack (Beam)."""
+    # Must be ready (cooldown=0), idle (not stunned/charging), and within range
     if (game_state['ai_special_attack_cooldown_timer'] == 0 and
         game_state['charge_state'] == 'Idle' and
-        game_state['ai_attack_state'] == 'Idle' and # Check for new slash state
-        distance_to_player < AI_SLASH_ATTACK_RANGE): # Check against the SLASH range
+        game_state['ai_attack_state'] == 'Idle' and 
+        distance_to_player < AI_SPECIAL_ATTACK_RANGE):
         
-        # Add a random chance to trigger (e.g., 5% chance per frame in range) to make it less predictable
+        # Add a random chance to trigger (e.g., 5% chance per frame in range)
         if random.random() < 0.05:
             return True
     return False
 
-# MODIFIED: Now initiates a windup state instead of immediate damage
 def initiate_ai_special_attack_windup():
-    """Transitions the AI into the Slash Windup state."""
+    """Transitions the AI into the Special Windup state (always leads to Beam)."""
     
-    # Start the Windup
-    game_state['ai_attack_state'] = 'SlashWindup'
+    game_state['ai_attack_state'] = 'SpecialWindup' # Unified Windup State
     game_state['flash_count'] = 0
     # Start timer for the first flash (Red state duration)
     game_state['flash_timer'] = AI_FLASH_DURATION_MS 
-    game_state['red_cube_mode'] = "Slash (Windup)" # Display windup mode
-
-def execute_ai_special_attack():
-    """Triggers the red cube's special yellow hitbox attack (damage/visual)."""
+    game_state['red_cube_mode'] = "Beam (Windup)" # Display windup mode
     
-    # 1. Calculate Hitbox Position
-    red_x, red_y = game_state['red_x'], game_state['red_y']
-    direction = game_state['ai_last_direction']
-    
-    offset = CUBE_SIZE 
-    hitbox_x, hitbox_y = red_x, red_y
-    
-    if direction == 'right':
-        hitbox_x = red_x + offset
-    elif direction == 'left':
-        hitbox_x = red_x - offset
-    elif direction == 'up':
-        hitbox_y = red_y - offset
-    elif direction == 'down':
-        hitbox_y = red_y + offset
-    else: 
-        # Fallback direction 
-        hitbox_x = red_x - offset 
-        direction = 'left' 
-
-    # Create the hitbox Rect
-    hitbox_rect = pygame.Rect(hitbox_x, hitbox_y, CUBE_SIZE, CUBE_SIZE)
-    
-    # 2. Perform Collision Check (Damage is applied immediately upon attack initiation)
-    if game_state['blue_active'] and check_hitbox_collision(hitbox_rect, game_state['blue_x'], game_state['blue_y']):
-        game_state['blue_health'] -= AI_SPECIAL_ATTACK_DAMAGE
-        print(f"Red Cube Slash hit! Damage: {AI_SPECIAL_ATTACK_DAMAGE}. Blue Health: {max(0, game_state['blue_health'])}")
-    
-    # 3. Spawn the Hitbox (for visual linger effect)
-    game_state['ai_yellow_hitbox_active'] = True
-    game_state['ai_yellow_hitbox_rect'] = hitbox_rect
-    game_state['ai_hitbox_timer'] = AI_SPECIAL_HITBOX_DURATION_MS
-    
-    # 4. Start Cooldown
-    game_state['ai_special_attack_cooldown_timer'] = AI_SPECIAL_ATTACK_COOLDOWN_MS
-    
-    # 5. Reset AI to Idle
-    game_state['ai_attack_state'] = 'Idle'
-    game_state['red_cube_mode'] = "Maintain" # Reset to standard AI mode
-
-
-# --- NEW AI BEAM ATTACK LOGIC ---
-
-def initiate_ai_beam_windup():
-    """Transitions the AI into the Beam Windup state."""
-    
-    # Keep the current flash count/timer from SlashWindup, but change state
-    game_state['ai_attack_state'] = 'BeamWindup'
-    game_state['red_cube_mode'] = "Beam (Windup)" 
-    
-    # Lock the target angle for the beam before charging
+    # Lock the target angle for the beam immediately
     target_x, target_y = game_state['blue_x'], game_state['blue_y']
     red_center_x = game_state['red_x'] + CUBE_SIZE / 2
     red_center_y = game_state['red_y'] + CUBE_SIZE / 2
@@ -430,6 +365,7 @@ def initiate_ai_beam_windup():
     # Calculate angle from Red Cube center to Blue Cube center
     dx = target_x + CUBE_SIZE / 2 - red_center_x
     dy = target_y + CUBE_SIZE / 2 - red_center_y
+    # Store initial angle, which will be dynamically updated in the loop
     game_state['ai_beam_angle'] = math.atan2(dy, dx)
     
 
@@ -440,60 +376,53 @@ def get_ai_beam_rect():
     """
     red_center_x = game_state['red_x'] + CUBE_SIZE / 2
     red_center_y = game_state['red_y'] + CUBE_SIZE / 2
+    # Convert angle to degrees for rotation (Pygame uses degrees, 0 is right, positive is CCW)
     angle_deg = math.degrees(game_state['ai_beam_angle'])
     
     # Create an unrotated surface for the beam
-    beam_surface = pygame.Surface((AI_BEAM_LENGTH, AI_BEAM_WIDTH), pygame.SRCALPHA)
-    beam_surface.fill(CYAN)
+    # The surface needs to be large enough to hold the rotated beam
+    surface_size = max(AI_BEAM_LENGTH, AI_BEAM_WIDTH) + 10 # Buffer
+    beam_surface = pygame.Surface((surface_size, surface_size), pygame.SRCALPHA)
     
-    # Rotate the surface
+    # Draw the unrotated beam inside the surface (centered to allow rotation around its center)
+    # Start the beam just outside the cube for a cleaner visual origin
+    origin_offset = CUBE_SIZE / 2 
+    unrotated_beam_rect = pygame.Rect(surface_size // 2 + origin_offset, surface_size // 2 - AI_BEAM_WIDTH // 2, AI_BEAM_LENGTH - origin_offset, AI_BEAM_WIDTH)
+    pygame.draw.rect(beam_surface, CYAN, unrotated_beam_rect)
+    
+    # Rotate the surface around its center
     rotated_surface = pygame.transform.rotate(beam_surface, -angle_deg)
     
     # Get the bounding rect of the rotated surface and center it on the Red Cube's center
     rotated_rect = rotated_surface.get_rect(center=(red_center_x, red_center_y))
     
-    # NOTE: Pygame rotation collision detection is complex. For simple damage, 
-    # we'll use a line segment collision check in execute_ai_beam_attack().
-    
     return rotated_surface, rotated_rect
 
-def execute_ai_beam_attack():
+def execute_ai_special_attack():
     """
-    Triggers the beam attack. Handles visual display and collision check.
-    For simplicity, the collision check will be approximate (a rect around the beam path).
+    Triggers the beam attack (now the only special attack). Handles visual display and collision check.
     """
     
     # 1. Activate Visual Linger
     game_state['ai_cyan_beam_active'] = True
     game_state['ai_hitbox_timer'] = AI_SPECIAL_HITBOX_DURATION_MS
     
-    # 2. Collision Check: Simplified to check if the blue cube center is within the beam area
-    # Create an extended rect that encompasses the beam's path from the cube
+    # 2. Collision Check: Simplified to check if the blue cube is within the beam's bounding area
     
-    # Use the current angle for the collision check
     angle = game_state['ai_beam_angle']
     
     red_center_x = game_state['red_x'] + CUBE_SIZE / 2
     red_center_y = game_state['red_y'] + CUBE_SIZE / 2
     
-    # End point of the beam (approximate)
+    # Get the beam's end point
     beam_end_x = red_center_x + AI_BEAM_LENGTH * math.cos(angle)
     beam_end_y = red_center_y + AI_BEAM_LENGTH * math.sin(angle)
     
-    blue_center_x = game_state['blue_x'] + CUBE_SIZE / 2
-    blue_center_y = game_state['blue_y'] + CUBE_SIZE / 2
-    
-    # This is a point-to-segment distance check (simplified collision)
-    # The blue cube is hit if its center is close enough to the beam line.
-    
-    # Formula for squared distance from point (x0, y0) to segment (x1, y1)-(x2, y2)
-    # (Simplified: using a large rectangle check for performance and ease)
-    
-    # Create a bounding box for the beam
-    x_min = min(red_center_x, beam_end_x) - AI_BEAM_WIDTH / 2
-    x_max = max(red_center_x, beam_end_x) + AI_BEAM_WIDTH / 2
-    y_min = min(red_center_y, beam_end_y) - AI_BEAM_WIDTH / 2
-    y_max = max(red_center_y, beam_end_y) + AI_BEAM_WIDTH / 2
+    # Create a bounding box for a rough collision check
+    x_min = min(red_center_x, beam_end_x) - CUBE_SIZE 
+    x_max = max(red_center_x, beam_end_x) + CUBE_SIZE
+    y_min = min(red_center_y, beam_end_y) - CUBE_SIZE
+    y_max = max(red_center_y, beam_end_y) + CUBE_SIZE
     
     beam_bounding_rect = pygame.Rect(x_min, y_min, x_max - x_min, y_max - y_min)
 
@@ -510,7 +439,7 @@ def execute_ai_beam_attack():
     game_state['ai_attack_state'] = 'Idle'
     game_state['red_cube_mode'] = "Maintain" 
 
-# --- END SPECIAL ATTACK LOGIC ---
+# --- END RED CUBE (AI) SPECIAL ATTACK ---
 
 
 # CustomTkinter Setup
@@ -565,24 +494,21 @@ def reset_game_state():
     game_state['flash_count'] = 0
     game_state['endlag_timer'] = 0.0
 
-    # Removed basic attack state reset for cleanup
-
     # Reset Blue Cube special attack state
     game_state['purple_hitbox_active'] = False
     game_state['purple_hitbox_rect'] = None
     game_state['hitbox_timer'] = 0
-    game_state['special_attack_cooldown_timer'] = 0
+    game_state['special_attack_cooldown_timer'] = 0 
     game_state['last_direction'] = 'right'
     
-    # Reset Red Cube special attack state
-    game_state['ai_yellow_hitbox_active'] = False
-    game_state['ai_yellow_hitbox_rect'] = None
-    game_state['ai_cyan_beam_active'] = False # NEW reset
-    game_state['ai_beam_angle'] = 0.0         # NEW reset
+    # Reset Red Cube special attack state (Beam Only)
+    # Slash variables removed
+    game_state['ai_cyan_beam_active'] = False 
+    game_state['ai_beam_angle'] = 0.0         
     game_state['ai_hitbox_timer'] = 0
     game_state['ai_special_attack_cooldown_timer'] = 0
     game_state['ai_last_direction'] = 'left'
-    game_state['ai_attack_state'] = 'Idle' # Reset NEW state
+    game_state['ai_attack_state'] = 'Idle' 
     
     # Update Tkinter controls
     tk_mode_text.set(f"Red Cube Mode: {game_state['red_cube_mode']}")
@@ -682,7 +608,7 @@ while running:
         text_rect = game_over_text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
         screen.blit(game_over_text, text_rect)
         pygame.display.flip()
-        continue # Skip the rest of the loop iteration
+        continue 
 
     
     # 3. Game Logic Update
@@ -734,14 +660,7 @@ while running:
         if game_state['special_attack_cooldown_timer'] < 0:
             game_state['special_attack_cooldown_timer'] = 0
 
-    # 3. Red Cube Yellow Hitbox Linger Timer
-    if game_state['ai_yellow_hitbox_active']:
-        game_state['ai_hitbox_timer'] -= dt
-        if game_state['ai_hitbox_timer'] <= 0:
-            game_state['ai_yellow_hitbox_active'] = False
-            game_state['ai_yellow_hitbox_rect'] = None
-            
-    # 4. Red Cube Cyan Beam Linger Timer (NEW)
+    # 3. Red Cube Cyan Beam Linger Timer 
     if game_state['ai_cyan_beam_active']:
         game_state['ai_hitbox_timer'] -= dt
         # The beam angle is updated dynamically here to make it track the player
@@ -753,20 +672,20 @@ while running:
             dy = target_y + CUBE_SIZE / 2 - red_center_y
             target_angle = math.atan2(dy, dx)
             
-            # Simple angle update (no smooth rotation needed for a quick beam)
+            # Simple angle update
             game_state['ai_beam_angle'] = target_angle
             
         else:
             game_state['ai_cyan_beam_active'] = False
             game_state['ai_beam_angle'] = 0.0
 
-    # 5. Red Cube Special Attack Cooldown Timer
+    # 4. Red Cube Special Attack Cooldown Timer
     if game_state['ai_special_attack_cooldown_timer'] > 0:
         game_state['ai_special_attack_cooldown_timer'] -= dt
         if game_state['ai_special_attack_cooldown_timer'] < 0:
             game_state['ai_special_attack_cooldown_timer'] = 0
             
-    # 6. Update Tkinter Cooldown Label
+    # 5. Update Tkinter Cooldown Label
     cooldown_time_s = game_state['special_attack_cooldown_timer'] / 1000
     
     if cooldown_time_s > 0:
@@ -774,7 +693,7 @@ while running:
         cooldown_label.configure(fg_color=PURPLE_HEX, text_color="white") 
     else:
         tk_cooldown_text.set("Slash: READY (SPACE)")
-        cooldown_label.configure(fg_color="green", text_color="white") # Green when ready
+        cooldown_label.configure(fg_color="green", text_color="white") 
     
     # --- END TIMERS AND COOLDOWN MANAGEMENT ---
     
@@ -786,38 +705,14 @@ while running:
         distance_to_player = calculate_distance(game_state['red_x'], game_state['red_y'], target_x, target_y)
 
 
-        # --- AI SLASH/BEAM ATTACK LOGIC ---
+        # --- AI BEAM ATTACK LOGIC (UNIFIED) ---
         
         if game_state['ai_attack_state'] == 'Idle':
             # Priority Check: AI Special Attack - Initiate Windup
             if check_ai_special_attack_trigger(distance_to_player) and game_state['charge_state'] == 'Idle':
                 initiate_ai_special_attack_windup()
         
-        elif game_state['ai_attack_state'] == 'SlashWindup':
-            # Cube does not move during windup
-            game_state['flash_timer'] -= dt
-            
-            # CHECK FOR TRANSITION TO BEAM ATTACK (NEW LOGIC)
-            # If the player is out of slash range during the windup (flash_count < 7)
-            if game_state['flash_count'] <= (AI_SLASH_FLASH_CYCLES * 2) and distance_to_player > AI_BEAM_RANGE:
-                initiate_ai_beam_windup() # Transition to the beam windup state
-                # The flash timer and count are preserved for the final cyan flash
-                
-            
-            if game_state['flash_timer'] <= 0:
-                game_state['flash_count'] += 1
-                
-                # Check if flashing is complete (3 black flashes = 7 state changes total)
-                if game_state['flash_count'] > (AI_SLASH_FLASH_CYCLES * 2):
-                    # Windup is complete, execute the slash attack
-                    execute_ai_special_attack()
-                else:
-                    # Continue flashing
-                    game_state['flash_timer'] = AI_FLASH_DURATION_MS
-            
-            game_state['red_cube_mode'] = "Slash (Windup)"
-            
-        elif game_state['ai_attack_state'] == 'BeamWindup': # NEW STATE
+        elif game_state['ai_attack_state'] == 'SpecialWindup': # Unified Windup state for Beam
             # Cube does not move during windup
             game_state['flash_timer'] -= dt
             
@@ -825,15 +720,15 @@ while running:
                 game_state['flash_count'] += 1
                 
                 # Check for the completion of the 4th (Cyan) flash cycle
-                # This happens at flash_count = 7 (after the 3rd black flash, which is flash_count 6)
+                # This happens at flash_count = 7 (after 3 black blinks = 6 state changes)
                 if game_state['flash_count'] > (AI_SLASH_FLASH_CYCLES * 2) + 1:
                     # Windup is complete, execute the beam attack
-                    execute_ai_beam_attack()
+                    execute_ai_special_attack()
                 else:
                     # Continue flashing (Red, Black, Red, Black, Red, Black, Cyan)
                     game_state['flash_timer'] = AI_FLASH_DURATION_MS
             
-            # The angle is dynamically updated during beam windup, unlike slash
+            # The angle is dynamically updated during windup to home onto the player
             target_x, target_y = game_state['blue_x'], game_state['blue_y']
             red_center_x = game_state['red_x'] + CUBE_SIZE / 2
             red_center_y = game_state['red_y'] + CUBE_SIZE / 2
@@ -843,11 +738,11 @@ while running:
             
             game_state['red_cube_mode'] = "Beam (Windup)" 
         
-        # --- END AI SLASH/BEAM ATTACK LOGIC ---
+        # --- END AI BEAM ATTACK LOGIC ---
         
 
         # --- CHARGE ATTACK LOGIC (Movement Control) ---
-        # The Charge Attack logic is only processed if the AI is not in the middle of a Slash/Beam Windup
+        # The Charge Attack logic is only processed if the AI is not in the middle of a special attack Windup
         if game_state['ai_attack_state'] == 'Idle':
             
             if game_state['charge_state'] == 'Idle':
@@ -972,12 +867,9 @@ while running:
     # 2. Blue Cube Special Attack (Purple Hitbox Damage to Red Cube)
     # Damage is handled on cast inside do_special_attack().
 
-    # 3. Red Cube Special Attack (Yellow Hitbox Damage to Blue Cube)
+    # 3. Red Cube Beam Attack (Cyan Beam Damage to Blue Cube)
     # Damage is handled on execution inside execute_ai_special_attack().
-    
-    # 4. Red Cube Beam Attack (Cyan Beam Damage to Blue Cube)
-    # Damage is handled on execution inside execute_ai_beam_attack().
-    
+
     # --- END COLLISION DETECTION ---
 
     # Check for game over
@@ -1002,9 +894,7 @@ while running:
     if game_state['purple_hitbox_active'] and game_state['purple_hitbox_rect']:
         pygame.draw.rect(screen, PURPLE_TUPLE, game_state['purple_hitbox_rect'])
 
-    # Draw the lingering red cube yellow hitbox (if active)
-    if game_state['ai_yellow_hitbox_active'] and game_state['ai_yellow_hitbox_rect']:
-        pygame.draw.rect(screen, YELLOW_TUPLE, game_state['ai_yellow_hitbox_rect'])
+    # Red cube yellow slash hitbox drawing logic removed
         
     # Draw the lingering red cube cyan beam (if active)
     if game_state['ai_cyan_beam_active']:
@@ -1016,8 +906,6 @@ while running:
         red_cube_color = get_red_cube_color(game_state)
         draw_cube(game_state['red_x'], game_state['red_y'], red_cube_color)
     
-    # We moved the Game Over drawing logic to the top of the loop to be the last thing drawn.
-    # The condition `if game_state['game_over']` is now handled at the start.
     
     pygame.display.flip()
 
