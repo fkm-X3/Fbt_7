@@ -1,45 +1,49 @@
-(function() {
-    var monthIndex = 10;
-    var day = 26;
-    var hour = 7;
-    var minute = 0;
+const chatBox = document.getElementById('chat-box');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
 
-    function onSameDayAfterTarget(now) {
-      
-      document.getElementById("demo").textContent = "It's past 7:00 AM on November 26 — custom handler not implemented.";
-    }
+        async function sendMessage() {
+            const message = messageInput.value.trim();
 
-    var now = new Date();
-    var year = now.getFullYear();
+            if (!message) {
+                alert('Please enter a message.');
+                return;
+            }
 
-    var target = new Date(year, monthIndex, day, hour, minute, 0, 0);
+            appendMessage('user', message);
+            messageInput.value = '';
 
-    if (now.getMonth() === monthIndex && now.getDate() === day && now.getTime() > target.getTime()) {
-      onSameDayAfterTarget(now);
-      return;
-    }
+            try {
+                const response = await fetch('http://localhost:11434/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'mistral',
+                        prompt: message,
+                        stream: false
+                    }),
+                });
 
-    if (now >= target) {
-      target = new Date(year + 1, monthIndex, day, hour, minute, 0, 0);
-    }
+                const data = await response.json();
+                if (!response.ok) throw new Error('API request failed');
 
-    var countDownDate = target.getTime();
+                appendMessage('assistant', data.response);
+            } catch (error) {
+                appendMessage('assistant', `⚠️ Error: ${error.message}`);
+            }
+        }
 
-    var x = setInterval(function() {
-      var now = new Date().getTime();
-      var distance = countDownDate - now;
+        function appendMessage(role, text) {
+            const msg = document.createElement('div');
+            msg.className = `message ${role}`;
+            msg.textContent = text;
+            chatBox.appendChild(msg);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
 
-      if (distance <= 0) {
-        clearInterval(x);
-        document.getElementById("demo").textContent = "EXPIRED";
-        return;
-      }
-
-      var days = Math.floor(distance / (1000 * 60 * 60 * 24));
-      var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-      var seconds = Math.floor((distance % (1000 * 60)) / 1000);
-
-      document.getElementById("demo").textContent = days + "d " + hours + "h " + minutes + "m " + seconds + "s ";
-    }, 1000);
-  })();
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
