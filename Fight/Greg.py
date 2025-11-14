@@ -1,9 +1,8 @@
 import pygame
 import random
-import customtkinter as ctk
 import sys
 import math
-import os # NEW: Required for file existence check
+import os
 
 pygame.init()
 
@@ -12,9 +11,6 @@ HEIGHT = 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Cube Combat")
 
-ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
-
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
 BLACK = (0, 0, 0) 
@@ -22,7 +18,6 @@ WHITE = (255, 255, 255)
 CYAN = (0, 255, 255) 
 
 PURPLE_TUPLE = (128, 0, 128) 
-PURPLE_HEX = "#800080"      
 
 CUBE_SIZE = 50
 
@@ -71,7 +66,6 @@ INITIAL_BLUE_HEALTH = 100
 INITIAL_RED_HEALTH = 100
 INITIAL_RED_CUBE_MODE = "Maintain"
 
-# NEW: Parry Constant
 PARRY_WINDOW_DURATION_MS = 200 # Duration for the parry effect
 
 font = pygame.font.Font(None, 36)
@@ -110,13 +104,15 @@ initial_game_state = {
     'ai_special_attack_cooldown_timer': 0,
     'ai_attack_state': 'Idle',    
     
-    # NEW: Parry State
     'parry_active': False,
 }
 
 game_state = initial_game_state.copy()
 
 STATS_FILE = "stats.txt" # Constant for the stats file
+# NEW: Debug file constant
+DEBUG_FILE = "debug.txt"
+is_debug_mode = False # Global flag for debug mode
 
 def load_stats():
     """Reads kill counts from stats.txt or initializes them."""
@@ -180,7 +176,6 @@ def get_red_cube_color(state):
 
     return RED
 
-# NEW: Function to get the Blue Cube's color (for parry visual)
 def get_blue_cube_color(state):
     """
     Determines the color of the Blue Cube based on its parry state.
@@ -199,21 +194,32 @@ def draw_health_bars():
     blue_bar_width = int(MAX_BAR_WIDTH * blue_health_ratio)
     red_bar_width = int(MAX_BAR_WIDTH * red_health_ratio)
 
+    # Health bar positions are swapped from the original, assuming blue is player (left) and red is AI (right)
+    # Reverting to the original file's logic: Red bar is on the left, Blue bar is on the right
     blue_health_rect = pygame.Rect(WIDTH - MAX_BAR_WIDTH - 10, 10, blue_bar_width, 20)
-
     red_health_rect = pygame.Rect(10, 10, red_bar_width, 20)
 
+    # Draw the background/outline
     pygame.draw.rect(screen, (100, 100, 100), (WIDTH - MAX_BAR_WIDTH - 10, 10, MAX_BAR_WIDTH, 20), 1)
     pygame.draw.rect(screen, (100, 100, 100), (10, 10, MAX_BAR_WIDTH, 20), 1)
 
+    # Draw the filled health
     pygame.draw.rect(screen, BLUE, blue_health_rect)
     pygame.draw.rect(screen, RED, red_health_rect)
 
+    # Health text
     blue_health_text = font.render(f"Blue: {max(0, game_state['blue_health'])}", True, WHITE)
     red_health_text = font.render(f"Red: {max(0, game_state['red_health'])}", True, WHITE)
 
     screen.blit(blue_health_text, (WIDTH - MAX_BAR_WIDTH - 10, 35))
     screen.blit(red_health_text, (10, 35))
+    
+    # NEW: Kill Stats Display
+    red_kills_text = font.render(f"Red Kills: {cube_stats['red_kills']}", True, RED)
+    blue_kills_text = font.render(f"Blue Kills: {cube_stats['blue_kills']}", True, BLUE)
+    screen.blit(red_kills_text, (10, HEIGHT - 40))
+    screen.blit(blue_kills_text, (WIDTH - 150, HEIGHT - 40))
+
 
 def calculate_distance(x1, y1, x2, y2):
     """Calculates the Euclidean distance between the centers of two cubes."""
@@ -226,9 +232,7 @@ def move_ai(mode, target_x, target_y, current_x, current_y, speed, red_health):
     dx, dy = 0, 0
     distance = calculate_distance(current_x, current_y, target_x, target_y)
 
-    # Note: Only calculate next mode if mode is NOT manually set (e.g., to "Parried (Stun)")
-    # The main game loop will ensure the cube doesn't move if in a non-movement state.
-    
+    # Only calculate next mode if mode is NOT manually set 
     if mode not in ["Parried (Stun)", "Charge (Endlag)", "Charge (Windup)", "Charge", "Beam (Windup)"]:
 
         if red_health <= RETREAT_HEALTH_THRESHOLD and distance > MAINTAIN_RANGE_MAX:
@@ -292,7 +296,8 @@ def check_hitbox_collision(hitbox_rect, target_x, target_y):
 def do_special_attack():
     """Triggers the blue cube's special purple hitbox attack."""
 
-    if game_state['special_attack_cooldown_timer'] > 0:
+    # NEW: Check for debug mode - ignore cooldown if active
+    if not is_debug_mode and game_state['special_attack_cooldown_timer'] > 0:
         return 
 
     blue_x, blue_y = game_state['blue_x'], game_state['blue_y']
@@ -322,24 +327,25 @@ def do_special_attack():
     game_state['purple_hitbox_rect'] = hitbox_rect
     game_state['hitbox_timer'] = HITBOX_DURATION_MS
 
-    game_state['special_attack_cooldown_timer'] = SPECIAL_ATTACK_COOLDOWN_MS
+    # Only set cooldown if debug mode is OFF
+    if not is_debug_mode:
+        game_state['special_attack_cooldown_timer'] = SPECIAL_ATTACK_COOLDOWN_MS
+    else:
+        game_state['special_attack_cooldown_timer'] = 1 # Set to a non-zero, non-blocking value for debug
 
 def initiate_parry():
     """
-    NEW FUNCTION: Initiates the Blue Cube's parry.
-    Successful parry occurs on the final black flash of the AI's windup.
+    Initiates the Blue Cube's parry.
     """
     if not game_state['blue_active'] or game_state['game_over']:
         return
 
-    # Check for Charge Windup (2 flash cycles = 4 total flashes)
     charge_windup_success = (
         game_state['charge_state'] == 'Windup' and 
         game_state['flash_count'] == (CHARGE_FLASH_CYCLES * 2) and # Final black flash count
         game_state['flash_timer'] > 0 # Currently in the final flash duration
     )
 
-    # Check for Special Attack Windup (3 flash cycles = 6 total flashes)
     special_windup_success = (
         game_state['ai_attack_state'] == 'SpecialWindup' and
         game_state['flash_count'] == (AI_SLASH_FLASH_CYCLES * 2) and # Final black flash count
@@ -350,26 +356,22 @@ def initiate_parry():
     if charge_windup_success or special_windup_success:
         print("Successful Parry! Red Cube stunned.")
 
-        # Force a long Endlag/Stun state on the Red Cube
         game_state['charge_state'] = 'Endlag'
-        game_state['endlag_timer'] = ENDLAG_DURATION_MS * 2  # Double the standard endlag for stun
+        game_state['endlag_timer'] = ENDLAG_DURATION_MS * 2
         game_state['red_cube_mode'] = "Parried (Stun)"
 
-        # Reset AI attack states to interrupt current windup
         game_state['ai_attack_state'] = 'Idle'
         game_state['flash_count'] = 0
         game_state['flash_timer'] = 0
 
-        # Activate player parry effect/visual
         game_state['parry_active'] = True
         game_state['parry_timer'] = PARRY_WINDOW_DURATION_MS 
 
-    # FAILED PARRY (Optional: can add a small stun/penalty to player if desired)
+    # FAILED PARRY
     else:
         print("Parry Attempt: Missed timing or no active windup.")
-        # Simple visual feedback for *any* F press attempt
         game_state['parry_active'] = True
-        game_state['parry_timer'] = PARRY_WINDOW_DURATION_MS // 2 # Shorter flash for failed parry
+        game_state['parry_timer'] = PARRY_WINDOW_DURATION_MS // 2 
 
 def check_ai_special_attack_trigger(distance_to_player):
     """Determines if the AI should try to use its special attack (Beam)."""
@@ -426,7 +428,7 @@ def get_ai_beam_rect():
 
 def execute_ai_special_attack():
     """
-    Triggers the beam attack (now the only special attack). Handles visual display and collision check.
+    Triggers the beam attack. Handles visual display and collision check.
     """
 
     game_state['ai_cyan_beam_active'] = True
@@ -450,90 +452,34 @@ def execute_ai_special_attack():
     blue_cube_rect = pygame.Rect(game_state['blue_x'], game_state['blue_y'], CUBE_SIZE, CUBE_SIZE)
 
     if game_state['blue_active'] and beam_bounding_rect.colliderect(blue_cube_rect):
-        game_state['blue_health'] -= AI_SPECIAL_ATTACK_DAMAGE
-        print(f"Red Cube Beam hit! Damage: {AI_SPECIAL_ATTACK_DAMAGE}. Blue Health: {max(0, game_state['blue_health'])}")
+        # NEW: Check for debug mode - take no damage if active
+        if not is_debug_mode:
+            game_state['blue_health'] -= AI_SPECIAL_ATTACK_DAMAGE
+            print(f"Red Cube Beam hit! Damage: {AI_SPECIAL_ATTACK_DAMAGE}. Blue Health: {max(0, game_state['blue_health'])}")
+        else:
+            print("Red Cube Beam hit! (Debug Invincible)")
+
 
     game_state['ai_special_attack_cooldown_timer'] = AI_SPECIAL_ATTACK_COOLDOWN_MS
 
     game_state['ai_attack_state'] = 'Idle'
     game_state['red_cube_mode'] = "Maintain" 
 
-root = ctk.CTk()
-root.title("Cube Combat Control Panel")
-
-# Set fixed size for the CTk window and prevent resizing
-root.geometry("300x550") # INCREASED HEIGHT FOR NEW HP LABEL AND AI CONTROL
-root.resizable(False, False)
-
-tk_mode_text = ctk.StringVar(value=f"Red Cube Mode: {game_state['red_cube_mode']}")
-tk_cooldown_text = ctk.StringVar(value="Slash: READY (SPACE)")
-tk_red_health = ctk.StringVar(value=f"Red Health: {game_state['red_health']}")
-# NEW: Variable for Blue Health
-tk_blue_health = ctk.StringVar(value=f"Blue Health: {game_state['blue_health']}")
-tk_blue_pos = ctk.StringVar(value=f"Blue Pos: ({game_state['blue_x']:.0f}, {game_state['blue_y']:.0f})")
-tk_red_pos = ctk.StringVar(value=f"Red Pos: ({game_state['red_x']:.0f}, {game_state['red_y']:.0f})")
-
-# NEW: Stat variables for display
-tk_red_kills = ctk.StringVar(value=f"Red Kills: {cube_stats['red_kills']}")
-tk_blue_kills = ctk.StringVar(value=f"Blue Kills: {cube_stats['blue_kills']}")
-
-control_panel_frame = ctk.CTkFrame(root)
-control_panel_frame.pack(padx=10, pady=10)
-
-def toggle_blue_active():
-    game_state['blue_active'] = not game_state['blue_active']
-    if game_state['blue_active']:
-        blue_button.configure(text="Blue Active (ON)", fg_color="green")
-    else:
-        blue_button.configure(text="Blue Active (OFF)", fg_color="red")
-    print(f"Blue Active: {game_state['blue_active']}")
-
-def increase_attack():
-    game_state['attack_damage'] = game_state.get('attack_damage', ATTACK_DAMAGE) + 5
-    print(f"Attack Damage: {game_state['attack_damage']}")
-
-def decrease_speed():
-    game_state['move_speed'] = max(1, game_state.get('move_speed', MOVE_SPEED) - 1)
-    print(f"Move Speed: {game_state['move_speed']}")
-
-def reset_positions():
-    game_state['blue_x'] = blue_x
-    game_state['blue_y'] = blue_y
-    game_state['red_x'] = red_x
-    game_state['red_y'] = red_y
-    print("Cube positions reset.")
-
-def force_endlag():
-    if game_state['charge_state'] != 'Endlag':
-        game_state['charge_state'] = 'Endlag'
-        game_state['endlag_timer'] = ENDLAG_DURATION_MS 
-        game_state['red_cube_mode'] = "Charge (Endlag)" 
-        print("Forced Red Cube into Endlag.")
-
-# NEW: Function to set AI Mode
-def set_ai_mode(new_mode):
-    """Sets the Red Cube's AI mode and updates the state variables."""
-    game_state['red_cube_mode'] = new_mode
-    # Reset attack states when manually setting mode to ensure predictable behavior
-    if new_mode in ["Maintain", "Attack", "Close Gap", "Back Off", "Defensive Retreat"]:
-        game_state['charge_state'] = 'Idle'
-        game_state['ai_attack_state'] = 'Idle'
-    
-    # If forcing a stun state, ensure the relevant timer is set
-    if new_mode == "Parried (Stun)":
-        game_state['charge_state'] = 'Endlag' # Reuse endlag mechanism for stun
-        game_state['endlag_timer'] = ENDLAG_DURATION_MS * 2
-        game_state['ai_attack_state'] = 'Idle'
-        game_state['ai_cyan_beam_active'] = False
-    
-    print(f"Red Cube Mode set to: {new_mode}")
-
-def reset_game_state():
-    """Resets all game variables to their initial state."""
+def reset_game_state(keep_stats=True):
+    """
+    Resets all game variables to their initial state.
+    If keep_stats is False, kill counts are also reset (e.g., on initial load).
+    """
 
     global game_state
 
-    # Note: Kill stats are NOT reset here, they are persistent
+    # Don't reset kill stats unless explicitly told not to (only on initial load in a real game)
+    if not keep_stats:
+        global cube_stats
+        cube_stats = {'red_kills': 0, 'blue_kills': 0}
+        save_stats(cube_stats)
+
+
     game_state['blue_active'] = INITIAL_BLUE_ACTIVE
     game_state['red_active'] = INITIAL_RED_ACTIVE
     game_state['blue_health'] = INITIAL_BLUE_HEALTH
@@ -563,148 +509,36 @@ def reset_game_state():
     game_state['ai_last_direction'] = 'left'
     game_state['ai_attack_state'] = 'Idle' 
     
-    # NEW: Reset parry state
     game_state['parry_active'] = False
     game_state['parry_timer'] = 0.0
+    
+    print("Game state reset.")
 
-    tk_mode_text.set(f"Red Cube Mode: {game_state['red_cube_mode']}")
-    blue_button.configure(
-        text=f"Blue Active ({'ON' if game_state['blue_active'] else 'OFF'})", 
-        fg_color="green" if game_state['blue_active'] else "red"
-    )
-    # Update AI Mode Option Menu to reflect the reset state
-    tk_ai_mode_choice.set(INITIAL_RED_CUBE_MODE)
-
-
-blue_button = ctk.CTkButton(
-    control_panel_frame, 
-    text=f"Blue Active ({'ON' if game_state['blue_active'] else 'OFF'})", 
-    command=toggle_blue_active,
-    fg_color="green" if game_state['blue_active'] else "red"
-)
-blue_button.pack(fill='x', pady=5, padx=10)
-
-attack_button = ctk.CTkButton(
-    control_panel_frame, 
-    text="Increase Attack Damage (+5)", 
-    command=increase_attack
-)
-attack_button.pack(fill='x', pady=5, padx=10)
-
-speed_button = ctk.CTkButton(
-    control_panel_frame, 
-    text="Decrease Move Speed (-1)", 
-    command=decrease_speed
-)
-speed_button.pack(fill='x', pady=5, padx=10)
-
-reset_pos_button = ctk.CTkButton(
-    control_panel_frame, 
-    text="Reset Cube Positions", 
-    command=reset_positions,
-    fg_color="gray"
-)
-reset_pos_button.pack(fill='x', pady=5, padx=10)
-
-endlag_button = ctk.CTkButton(
-    control_panel_frame, 
-    text="Force Red Cube Endlag", 
-    command=force_endlag,
-    fg_color="orange"
-)
-endlag_button.pack(fill='x', pady=5, padx=10)
-
-# NEW: AI Mode Control
-ai_mode_options = ["Maintain", "Attack", "Close Gap", "Back Off", "Defensive Retreat", "Charge", "Beam (Windup)", "Parried (Stun)"]
-tk_ai_mode_choice = ctk.StringVar(value=game_state['red_cube_mode'])
-
-ai_mode_label = ctk.CTkLabel(
-    control_panel_frame, 
-    text="Force AI Mode:", 
-    font=ctk.CTkFont(family='Arial', size=12, weight='bold')
-)
-ai_mode_label.pack(fill='x', pady=(10, 0), padx=10)
-
-ai_mode_menu = ctk.CTkOptionMenu(
-    control_panel_frame, 
-    values=ai_mode_options,
-    variable=tk_ai_mode_choice,
-    command=set_ai_mode
-)
-ai_mode_menu.pack(fill='x', pady=(0, 10), padx=10)
+def check_debug_file():
+    """Reads the debug.txt file and updates the global debug flag."""
+    global is_debug_mode
+    try:
+        if os.path.exists(DEBUG_FILE):
+            with open(DEBUG_FILE, 'r') as f:
+                content = f.readline().strip().lower()
+                is_debug_mode_new = content == "debug = true"
+                if is_debug_mode_new != is_debug_mode:
+                    is_debug_mode = is_debug_mode_new
+                    print(f"Debug Mode Toggled: {is_debug_mode}")
+                return is_debug_mode
+        else:
+            if is_debug_mode:
+                is_debug_mode = False
+                print("Debug Mode Toggled: False (File removed)")
+            return False
+    except Exception as e:
+        if is_debug_mode:
+            is_debug_mode = False
+            print(f"Error reading debug file, disabling debug: {e}")
+        return False
 
 
-status_label = ctk.CTkLabel(
-    control_panel_frame, 
-    textvariable=tk_mode_text, 
-    fg_color="yellow", 
-    text_color='black', 
-    font=ctk.CTkFont(family='Arial', size=14, weight='bold'),
-    corner_radius=6
-)
-status_label.pack(fill='x', pady=(10, 5), padx=10)
-
-cooldown_label = ctk.CTkLabel(
-    control_panel_frame, 
-    textvariable=tk_cooldown_text, 
-    fg_color="green", 
-    text_color='white', 
-    font=ctk.CTkFont(family='Arial', size=12, weight='bold'),
-    corner_radius=6
-)
-cooldown_label.pack(fill='x', pady=(5, 10), padx=10)
-
-red_health_label = ctk.CTkLabel(
-    control_panel_frame, 
-    textvariable=tk_red_health, 
-    text_color='red', 
-    corner_radius=6
-)
-red_health_label.pack(fill='x', pady=(5, 0), padx=10)
-
-# NEW: Blue Health Display
-blue_health_label = ctk.CTkLabel(
-    control_panel_frame, 
-    textvariable=tk_blue_health, 
-    text_color='blue', 
-    corner_radius=6
-)
-# Placed directly under Red Health
-blue_health_label.pack(fill='x', pady=(0, 5), padx=10)
-
-
-blue_pos_label = ctk.CTkLabel(
-    control_panel_frame, 
-    textvariable=tk_blue_pos, 
-    text_color='blue', 
-    corner_radius=6
-)
-blue_pos_label.pack(fill='x', pady=0, padx=10)
-
-red_pos_label = ctk.CTkLabel(
-    control_panel_frame, 
-    textvariable=tk_red_pos, 
-    text_color='red', 
-    corner_radius=6
-)
-red_pos_label.pack(fill='x', pady=0, padx=10) 
-
-# NEW: Kill Stats Display
-red_kills_label = ctk.CTkLabel(
-    control_panel_frame, 
-    textvariable=tk_red_kills, 
-    text_color='red', 
-    corner_radius=6
-)
-red_kills_label.pack(fill='x', pady=(5, 0), padx=10)
-
-blue_kills_label = ctk.CTkLabel(
-    control_panel_frame, 
-    textvariable=tk_blue_kills, 
-    text_color='blue', 
-    corner_radius=6
-)
-blue_kills_label.pack(fill='x', pady=(0, 10), padx=10) 
+# --- Main Game Loop ---
 
 running = True
 clock = pygame.time.Clock()
@@ -713,6 +547,9 @@ while running:
 
     dt = clock.tick(60) 
 
+    # NEW: Check the debug file at the start of every frame
+    is_debug_mode = check_debug_file() 
+    
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -720,7 +557,6 @@ while running:
         if event.type == pygame.KEYDOWN and game_state['blue_active'] and not game_state['game_over']:
             if event.key == pygame.K_SPACE:
                 do_special_attack()
-            # NEW: Parry button check
             if event.key == pygame.K_f:
                 initiate_parry()
 
@@ -728,14 +564,7 @@ while running:
             print("Restarting Game...")
             reset_game_state()
 
-    try:
-        # Re-apply the geometry setting in case other code tried to change it (though it shouldn't)
-        # This is here for robustness, but `root.resizable(False, False)` is the primary fix.
-        # root.geometry("300x550") 
-        root.update()
-    except Exception as e:
-        running = False
-        break
+    # REMOVED: root.update() and all CTk related code
 
     if game_state['game_over']:
 
@@ -758,6 +587,7 @@ while running:
     keys = pygame.key.get_pressed()
     current_move_speed = game_state.get('move_speed', MOVE_SPEED)
 
+    # --- Blue Cube Movement and Timers ---
     if game_state['blue_active']:
 
         dx, dy = 0, 0
@@ -782,7 +612,6 @@ while running:
         game_state['blue_x'] = max(0, min(game_state['blue_x'], WIDTH - CUBE_SIZE))
         game_state['blue_y'] = max(0, min(game_state['blue_y'], HEIGHT - CUBE_SIZE))
 
-    # NEW: Parry active timer update
     if game_state.get('parry_active', False):
         game_state['parry_timer'] -= dt
         if game_state['parry_timer'] <= 0:
@@ -795,24 +624,30 @@ while running:
             game_state['purple_hitbox_active'] = False
             game_state['purple_hitbox_rect'] = None
 
+    # NEW: Cooldown timer handling is modified for debug mode
     if game_state['special_attack_cooldown_timer'] > 0:
-        game_state['special_attack_cooldown_timer'] -= dt
+        if not is_debug_mode:
+            game_state['special_attack_cooldown_timer'] -= dt
+        else:
+            # If debug, ensure the timer is practically zero but non-zero to satisfy the check in do_special_attack
+            game_state['special_attack_cooldown_timer'] = 1 
+            
         if game_state['special_attack_cooldown_timer'] < 0:
             game_state['special_attack_cooldown_timer'] = 0
 
+    # --- AI Timers ---
     if game_state['ai_cyan_beam_active']:
         game_state['ai_hitbox_timer'] -= dt
 
         if game_state['ai_hitbox_timer'] > 0:
+            # Beam continues to track the player during the active hitbox duration
             target_x, target_y = game_state['blue_x'], game_state['blue_y']
             red_center_x = game_state['red_x'] + CUBE_SIZE / 2
             red_center_y = game_state['red_y'] + CUBE_SIZE / 2
             dx = target_x + CUBE_SIZE / 2 - red_center_x
             dy = target_y + CUBE_SIZE / 2 - red_center_y
             target_angle = math.atan2(dy, dx)
-
             game_state['ai_beam_angle'] = target_angle
-
         else:
             game_state['ai_cyan_beam_active'] = False
             game_state['ai_beam_angle'] = 0.0
@@ -822,21 +657,12 @@ while running:
         if game_state['ai_special_attack_cooldown_timer'] < 0:
             game_state['ai_special_attack_cooldown_timer'] = 0
 
-    cooldown_time_s = game_state['special_attack_cooldown_timer'] / 1000
-
-    if cooldown_time_s > 0:
-        tk_cooldown_text.set(f"Slash: {cooldown_time_s:.1f}s CD")
-        cooldown_label.configure(fg_color=PURPLE_HEX, text_color="white") 
-    else:
-        tk_cooldown_text.set("Slash: READY (SPACE)")
-        cooldown_label.configure(fg_color="green", text_color="white") 
-
+    # --- AI Logic (Red Cube) ---
     if game_state['red_active']:
 
         target_x, target_y = game_state['blue_x'], game_state['blue_y']
         distance_to_player = calculate_distance(game_state['red_x'], game_state['red_y'], target_x, target_y)
 
-        # Check for user-forced non-movable states
         ai_is_stuck = game_state['red_cube_mode'] in ["Parried (Stun)", "Charge (Endlag)", "Charge (Windup)", "Beam (Windup)"]
 
         if game_state['ai_attack_state'] == 'Idle' and not ai_is_stuck:
@@ -845,19 +671,17 @@ while running:
                 initiate_ai_special_attack_windup()
 
         elif game_state['ai_attack_state'] == 'SpecialWindup' and not ai_is_stuck: 
-
             game_state['flash_timer'] -= dt
 
             if game_state['flash_timer'] <= 0:
                 game_state['flash_count'] += 1
 
                 if game_state['flash_count'] > (AI_SLASH_FLASH_CYCLES * 2) + 1:
-
                     execute_ai_special_attack()
                 else:
-
                     game_state['flash_timer'] = AI_FLASH_DURATION_MS
 
+            # Track player during windup
             target_x, target_y = game_state['blue_x'], game_state['blue_y']
             red_center_x = game_state['red_x'] + CUBE_SIZE / 2
             red_center_y = game_state['red_y'] + CUBE_SIZE / 2
@@ -866,56 +690,43 @@ while running:
             game_state['ai_beam_angle'] = math.atan2(dy, dx) 
 
             game_state['red_cube_mode'] = "Beam (Windup)" 
-            tk_ai_mode_choice.set("Beam (Windup)") # Update UI if state changes internally
 
         if game_state['ai_attack_state'] == 'Idle' and not ai_is_stuck:
 
             if game_state['charge_state'] == 'Idle':
 
-                # Only allow automatic initiation if mode is one of the auto-calculated ones
-                if game_state['red_cube_mode'] not in ["Charge", "Charge (Endlag)"]:
+                if random.random() < CHARGE_INITIATE_CHANCE:
+                    game_state['charge_state'] = 'Windup'
+                    game_state['flash_count'] = 0
+
+                    game_state['flash_timer'] = FLASH_DURATION_MS 
+
+                    dx = target_x - game_state['red_x']
+                    dy = target_y - game_state['red_y']
+                    angle = math.atan2(dy, dx)
+                    game_state['charge_dx'] = math.cos(angle)
+                    game_state['charge_dy'] = math.sin(angle)
+
+                    game_state['red_cube_mode'] = "Charge (Windup)" 
+
+                else:
+                    new_red_x, new_red_y, new_mode = move_ai(
+                        game_state['red_cube_mode'], 
+                        target_x, 
+                        target_y, 
+                        game_state['red_x'], 
+                        game_state['red_y'], 
+                        AI_MOVE_SPEED,
+                        game_state['red_health']
+                    )
+                    game_state['red_x'] = new_red_x
+                    game_state['red_y'] = new_red_y
                     
-                    if random.random() < CHARGE_INITIATE_CHANCE:
-                        game_state['charge_state'] = 'Windup'
-                        game_state['flash_count'] = 0
-
-                        game_state['flash_timer'] = FLASH_DURATION_MS 
-
-                        dx = target_x - game_state['red_x']
-                        dy = target_y - game_state['red_y']
-                        angle = math.atan2(dy, dx)
-                        game_state['charge_dx'] = math.cos(angle)
-                        game_state['charge_dy'] = math.sin(angle)
-
-                        game_state['red_cube_mode'] = "Charge (Windup)" 
-                        tk_ai_mode_choice.set("Charge (Windup)") # Update UI if state changes internally
-
-                    else:
-
-                        # Only use the AI move logic if the mode is not manually forced to a charge state
-                        if game_state['red_cube_mode'] in ["Maintain", "Attack", "Close Gap", "Back Off", "Defensive Retreat"]:
-                            new_red_x, new_red_y, new_mode = move_ai(
-                                game_state['red_cube_mode'], 
-                                target_x, 
-                                target_y, 
-                                game_state['red_x'], 
-                                game_state['red_y'], 
-                                AI_MOVE_SPEED,
-                                game_state['red_health']
-                            )
-                            game_state['red_x'] = new_red_x
-                            game_state['red_y'] = new_red_y
-                            
-                            # Only update the mode if the AI logic determined a change
-                            if game_state['red_cube_mode'] != new_mode:
-                                game_state['red_cube_mode'] = new_mode
-                                tk_ai_mode_choice.set(new_mode) # Update UI if state changes internally
+                    if game_state['red_cube_mode'] != new_mode:
+                        game_state['red_cube_mode'] = new_mode
                         
-                        # If a manual mode is set that is NOT a stun/charge, the cube still moves 
-                        # according to the AI's logic for that mode.
 
             elif game_state['charge_state'] == 'Windup':
-
                 game_state['flash_timer'] -= dt
 
                 if game_state['flash_timer'] <= 0:
@@ -924,17 +735,13 @@ while running:
                     if game_state['flash_count'] > (CHARGE_FLASH_CYCLES * 2):
                         game_state['charge_state'] = 'Charging'
                         game_state['red_cube_mode'] = "Charge"
-                        tk_ai_mode_choice.set("Charge") # Update UI if state changes internally
                     else:
                         game_state['flash_timer'] = FLASH_DURATION_MS
 
                 game_state['red_cube_mode'] = "Charge (Windup)"
-                tk_ai_mode_choice.set("Charge (Windup)") # Update UI if state changes internally
 
             elif game_state['charge_state'] == 'Charging':
-
                 game_state['red_cube_mode'] = "Charge"
-                tk_ai_mode_choice.set("Charge") # Update UI if state changes internally
 
                 move_x = game_state['charge_dx'] * CHARGE_SPEED
                 move_y = game_state['charge_dy'] * CHARGE_SPEED
@@ -959,26 +766,17 @@ while running:
                     game_state['charge_state'] = 'Endlag' 
                     game_state['endlag_timer'] = ENDLAG_DURATION_MS 
                     game_state['red_cube_mode'] = "Charge (Endlag)"
-                    tk_ai_mode_choice.set("Charge (Endlag)") # Update UI if state changes internally
 
             elif game_state['charge_state'] == 'Endlag':
-
                 game_state['endlag_timer'] -= dt 
 
                 if game_state['endlag_timer'] <= 0:
                     game_state['charge_state'] = 'Idle'
                     game_state['red_cube_mode'] = "Maintain"
-                    tk_ai_mode_choice.set("Maintain") # Update UI if state changes internally
                 else:
                     game_state['red_cube_mode'] = "Charge (Endlag)"
-                    tk_ai_mode_choice.set("Charge (Endlag)") # Update UI if state changes internally
 
-    tk_mode_text.set(f"Red Cube Mode: {game_state['red_cube_mode']}")
-    tk_red_health.set(f"Red Health: {max(0, game_state['red_health'])}")
-    tk_blue_health.set(f"Blue Health: {max(0, game_state['blue_health'])}") # NEW: Update Blue Health
-    tk_blue_pos.set(f"Blue Pos: ({game_state['blue_x']:.0f}, {game_state['blue_y']:.0f})")
-    tk_red_pos.set(f"Red Pos: ({game_state['red_x']:.0f}, {game_state['red_y']:.0f})")
-
+    # --- Collision Check (Red Cube Charge) ---
     is_charging = game_state['charge_state'] == 'Charging'
 
     if is_charging:
@@ -989,32 +787,51 @@ while running:
             game_state['blue_y'] + CUBE_SIZE > game_state['red_y']):
 
             if game_state['blue_active'] and game_state['blue_health'] > 0:
-                game_state['blue_health'] -= CHARGE_ATTACK_DAMAGE 
-                print(f"Red Cube Charge hit! Damage: {CHARGE_ATTACK_DAMAGE}. Blue Health: {max(0, game_state['blue_health'])}")
+                # NEW: Check for debug mode - take no damage if active
+                if not is_debug_mode:
+                    game_state['blue_health'] -= CHARGE_ATTACK_DAMAGE 
+                    print(f"Red Cube Charge hit! Damage: {CHARGE_ATTACK_DAMAGE}. Blue Health: {max(0, game_state['blue_health'])}")
+                else:
+                    print("Red Cube Charge hit! (Debug Invincible)")
 
+
+    # --- Win Condition and Debug Respawn ---
     if game_state['blue_health'] <= 0:
         if game_state['blue_active']:
             print("Blue Cube Defeated!")
-            # NEW: Blue Cube is defeated, Red Cube wins
+            # Blue Cube is defeated, Red Cube wins
             cube_stats['red_kills'] += 1
             save_stats(cube_stats)
-            tk_red_kills.set(f"Red Kills: {cube_stats['red_kills']}")
         game_state['blue_active'] = False
         game_state['game_over'] = True
 
     if game_state['red_health'] <= 0:
         if game_state['red_active']:
             print("Red Cube Defeated!")
-            # NEW: Red Cube is defeated, Blue Cube wins
+            # Red Cube is defeated, Blue Cube wins
             cube_stats['blue_kills'] += 1
             save_stats(cube_stats)
-            tk_blue_kills.set(f"Blue Kills: {cube_stats['blue_kills']}")
-        game_state['red_active'] = False
-        game_state['game_over'] = True
+            
+            # NEW: Red Cube Respawn in debug mode
+            if is_debug_mode:
+                print("Debug Mode: Red Cube Respawning...")
+                # Reset only the Red Cube's state, but keep player health/position
+                game_state['red_active'] = INITIAL_RED_ACTIVE
+                game_state['red_health'] = INITIAL_RED_HEALTH
+                game_state['red_x'] = red_x
+                game_state['red_y'] = red_y
+                game_state['red_cube_mode'] = INITIAL_RED_CUBE_MODE
+                game_state['charge_state'] = 'Idle'
+                game_state['ai_attack_state'] = 'Idle'
+                game_state['ai_special_attack_cooldown_timer'] = 0
+            else:
+                game_state['red_active'] = False
+                game_state['game_over'] = True
 
+
+    # --- Drawing ---
     screen.fill(WHITE)
 
-    # NEW: Use get_blue_cube_color for drawing the blue cube
     blue_cube_color = get_blue_cube_color(game_state)
     draw_cube(game_state['blue_x'], game_state['blue_y'], blue_cube_color)
     
