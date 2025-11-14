@@ -1,2 +1,3 @@
 red cube killed: 0
-blue cube killed: 0
+blue cube killed: 9
+x
