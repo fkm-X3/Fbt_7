@@ -1,0 +1,29 @@
+cube 1 stats:
+    color: blue
+    attack: slash, parry
+    max hp: 100
+
+cube 2 stats:
+    color: red
+    attacks: charge, laser(windup)
+    max hp: 100 
+
+cube 3 stats:
+    color: green
+    attacks: slash, laser(windup)
+    max hp: 100 
+
+cube 4 stats:
+    color: pink
+    attacks: block(bar), slash
+    max hp: 100
+
+cube 5 stats:
+    color: brown
+    attacks: kidnap (inversts enemy's controls 3 seconds), laser (windup)
+    max hp: 75
+
+cube 6 stats:
+    color: dark blue
+    attacks: pull (invert controls during pull 3 sec), slash
+    max hp: 75
