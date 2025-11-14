@@ -3,6 +3,7 @@ import random
 import sys
 import math
 import os
+import re # Added for parsing functionality
 
 pygame.init()
 
@@ -16,10 +17,105 @@ RED = (255, 0, 0)
 BLACK = (0, 0, 0) 
 WHITE = (255, 255, 255)
 CYAN = (0, 255, 255) 
+GREEN = (0, 200, 0)
+BRIGHT_GREEN = (0, 255, 0)
+GRAY = (200, 200, 200)
+DARK_GRAY = (100, 100, 100)
+BROWN = (139, 69, 19) # NEW: Color for Brown Cube
+PINK = (255, 192, 203) # NEW: Color for Pink Cube
+DARK_BLUE = (0, 0, 139) # NEW: Color for Dark Blue Cube
 
 PURPLE_TUPLE = (128, 0, 128) 
 
 CUBE_SIZE = 50
+
+# --- NEW: CUBE STATS AND LOADING ---
+
+# Mapping cube colors (strings) to Pygame color tuples
+CUBE_COLOR_MAP = {
+    'blue': BLUE,
+    'red': RED,
+    'green': GREEN,
+    'pink': PINK,
+    'brown': BROWN,
+    'dark blue': DARK_BLUE,
+}
+
+# The list that will hold all the cube data
+all_cubes_data = []
+
+def parse_cubes_file(file_content):
+    """Parses the content of cubes.txt into a structured list of dictionaries."""
+    
+    # Clean up the input content, normalize 'attacks' vs 'attack'
+    content = file_content.replace('attacks:', 'attack:').replace('attack:', 'attacks:')
+
+    # Split the content into blocks, one for each cube
+    cube_blocks = re.split(r'cube \d+ stats:', content, flags=re.IGNORECASE)[1:]
+    
+    cubes_list = []
+    current_cube = {}
+    
+    # Helper to clean up data lines
+    def clean_value(value):
+        # Cleans up the attack descriptions to look better in the list display
+        return value.strip().replace('(windup)', '').replace('(bar)', '').replace('(inversts enemy\'s controls 3 seconds)', '').replace('(invert controls during pull 3 sec)', '').strip()
+
+    for i, block in enumerate(cube_blocks):
+        cube_index = i + 1
+        
+        lines = block.strip().split('\n')
+        
+        current_cube = {'id': cube_index}
+        
+        for line in lines:
+            line = line.strip()
+            
+            if line.startswith('color:'):
+                current_cube['color'] = line.split(':', 1)[1].strip().lower()
+            elif line.startswith('attacks:'):
+                # Clean and split attacks, handle commas
+                attacks_str = line.split(':', 1)[1].strip()
+                attacks = [clean_value(a) for a in attacks_str.split(',')]
+                current_cube['attacks'] = ", ".join(attacks)
+            elif line.startswith('max hp:'):
+                current_cube['max hp'] = line.split(':', 1)[1].strip()
+        
+        # Override HP based on the external file structure if not found internally
+        # Logic derived from test.py to handle missing HP in source blocks 5 and 6
+        if 'max hp' not in current_cube:
+            if cube_index in [5, 6]:
+                current_cube['max hp'] = '75' 
+
+        cubes_list.append(current_cube)
+
+    return cubes_list
+
+CUBES_FILE_PATH = "cubes.txt" # NEW: Define the file path constant
+
+def load_cubes_file_content(filepath):
+    """Attempts to read the content of the cubes stats file."""
+    if not os.path.exists(filepath):
+        print(f"Error: Cube stats file not found at {filepath}")
+        return ""
+    try:
+        with open(filepath, 'r') as f:
+            return f.read()
+    except Exception as e:
+        print(f"Error reading cube stats file: {e}")
+        return ""
+
+# NEW: Read from the file instead of the hardcoded string
+CUBES_FILE_CONTENT = load_cubes_file_content(CUBES_FILE_PATH)
+
+# Check if content was loaded before parsing (optional but good practice)
+if CUBES_FILE_CONTENT:
+    all_cubes_data = parse_cubes_file(CUBES_FILE_CONTENT)
+else:
+    all_cubes_data = []
+    print("WARNING: No cube data loaded. 'Collected Cubes' scene will be empty.")
+
+# --- END NEW: CUBE STATS AND LOADING ---
 
 blue_x = 20
 blue_y = HEIGHT // 2 - CUBE_SIZE // 2
@@ -105,9 +201,13 @@ initial_game_state = {
     'ai_attack_state': 'Idle',    
     
     'parry_active': False,
+    'parry_timer': 0.0, # Added parry timer
 }
 
 game_state = initial_game_state.copy()
+
+# NEW: Scene Management - Start the game in the menu
+current_scene = "menu" 
 
 STATS_FILE = "stats.txt" # Constant for the stats file
 # NEW: Debug file constant
@@ -147,6 +247,14 @@ def save_stats(stats):
 
 # Load stats on game start
 cube_stats = load_stats()
+
+# NEW: Helper function to draw text in the menu
+def draw_text(text, font_size, color, x, y):
+    """Draws centered text using a specified font size."""
+    text_font = pygame.font.Font(None, font_size)
+    text_surface = text_font.render(text, True, color)
+    text_rect = text_surface.get_rect(center=(x, y))
+    screen.blit(text_surface, text_rect)
 
 def draw_cube(x, y, color):
     pygame.draw.rect(screen, color, (x, y, CUBE_SIZE, CUBE_SIZE))
@@ -465,6 +573,156 @@ def execute_ai_special_attack():
     game_state['ai_attack_state'] = 'Idle'
     game_state['red_cube_mode'] = "Maintain" 
 
+# NEW: Helper function for the Collected Cubes scene
+def draw_cube_preview(x, y, color_name):
+    """Draws a small cube preview."""
+    
+    # Get the Pygame color tuple
+    color = CUBE_COLOR_MAP.get(color_name.lower(), BLACK)
+    
+    PREVIEW_SIZE = 30
+    
+    pygame.draw.rect(screen, color, (x, y, PREVIEW_SIZE, PREVIEW_SIZE))
+    # Draw a white outline for dark cubes
+    if color_name.lower() in ['black', 'dark blue', 'brown']:
+        pygame.draw.rect(screen, WHITE, (x, y, PREVIEW_SIZE, PREVIEW_SIZE), 1)
+
+# NEW: Collected Cubes Scene
+def collected_cubes_scene():
+    """Renders the list of collected cubes and their stats."""
+    
+    global current_scene, running
+
+    mouse_x, mouse_y = pygame.mouse.get_pos()
+    click = False
+    
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1: 
+                click = True
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            current_scene = "menu"
+            return
+
+
+    screen.fill(BLACK) 
+    draw_text("COLLECTED CUBES", 50, WHITE, WIDTH // 2, 40)
+
+    # --- Back Button ---
+    button_width, button_height = 150, 40
+    back_x = 70
+    back_y = 40
+    back_rect = pygame.Rect(back_x - button_width // 2, back_y - button_height // 2, button_width, button_height)
+    
+    button_color = DARK_GRAY
+    if back_rect.collidepoint((mouse_x, mouse_y)):
+        button_color = GRAY
+        if click:
+            current_scene = "menu"
+            return 
+    
+    pygame.draw.rect(screen, button_color, back_rect, border_radius=5)
+    draw_text("Back (ESC)", 28, BLACK, back_x, back_y)
+    
+    # --- Cube List Display ---
+    
+    start_y = 100
+    line_height = 50
+    left_padding = 50
+    
+    for i, cube in enumerate(all_cubes_data):
+        y_pos = start_y + i * line_height
+        
+        # 1. Cube ID and Preview
+        draw_text(f"Cube {cube['id']}", 32, WHITE, left_padding + 50, y_pos)
+        draw_cube_preview(left_padding - 5, y_pos - 15, cube['color'])
+        
+        # 2. Stats
+        stats_text = f"Color: {cube['color'].capitalize()} | Attacks: {cube.get('attacks', 'N/A')} | Max HP: {cube.get('max hp', 'N/A')}"
+        # Adjust position for the text to fit better
+        draw_text(stats_text, 24, WHITE, WIDTH // 2 + 100, y_pos)
+    
+    pygame.display.flip()
+
+# Main Menu Scene - UPDATED to include COLLECTED CUBES button
+def main_menu():
+    global current_scene, running
+
+    mouse_x, mouse_y = pygame.mouse.get_pos()
+    click = False
+    
+    # Process menu-specific events
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1: # Left click
+                click = True
+
+    # Draw Background
+    screen.fill(BLACK) 
+    
+    # Draw Title
+    draw_text("CUBE COMBAT", 72, RED, WIDTH // 2, HEIGHT // 4)
+
+    # Define button dimensions
+    button_width, button_height = 250, 60
+    center_x = WIDTH // 2
+    
+    # Button positions are staggered vertically
+    start_y = HEIGHT // 2
+    collected_y = start_y + button_height + 30 # New button position
+    quit_y = collected_y + button_height + 30
+
+    # --- Start Button ---
+    start_rect = pygame.Rect(center_x - button_width // 2, start_y - button_height // 2, button_width, button_height)
+    
+    button_color = GREEN
+    if start_rect.collidepoint((mouse_x, mouse_y)):
+        button_color = BRIGHT_GREEN
+        if click:
+            current_scene = "game"
+            # Ensure the game state is clean when starting from the menu
+            reset_game_state(keep_stats=True) 
+            return 
+    
+    pygame.draw.rect(screen, button_color, start_rect, border_radius=10)
+    draw_text("START GAME", 36, BLACK, center_x, start_y)
+    
+    # --- NEW: Collected Cubes Button ---
+    collected_rect = pygame.Rect(center_x - button_width // 2, collected_y - button_height // 2, button_width, button_height)
+    
+    button_color = BLUE
+    if collected_rect.collidepoint((mouse_x, mouse_y)):
+        button_color = CYAN
+        if click:
+            current_scene = "collected_cubes" # Switch to the new scene
+            return 
+
+    pygame.draw.rect(screen, button_color, collected_rect, border_radius=10)
+    draw_text("COLLECTED CUBES", 36, BLACK, center_x, collected_y)
+
+
+    # --- Quit Button ---
+    quit_rect = pygame.Rect(center_x - button_width // 2, quit_y - button_height // 2, button_width, button_height)
+
+    button_color = DARK_GRAY
+    if quit_rect.collidepoint((mouse_x, mouse_y)):
+        button_color = GRAY
+        if click:
+            running = False
+            return 
+
+    pygame.draw.rect(screen, button_color, quit_rect, border_radius=10)
+    draw_text("QUIT", 36, BLACK, center_x, quit_y)
+    
+    # Display the result
+    pygame.display.flip()
+
 def reset_game_state(keep_stats=True):
     """
     Resets all game variables to their initial state.
@@ -547,24 +805,45 @@ while running:
 
     dt = clock.tick(60) 
 
+    # Scene Switch: If we're in the menu, run menu logic and skip the game loop
+    if current_scene == "menu":
+        main_menu()
+        continue
+    
+    # NEW: Handle the new scene
+    if current_scene == "collected_cubes":
+        collected_cubes_scene()
+        continue
+
+    # --- GAME SCENE LOGIC STARTS HERE ---
+
     # NEW: Check the debug file at the start of every frame
     is_debug_mode = check_debug_file() 
     
+    # Process game-specific events
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-        if event.type == pygame.KEYDOWN and game_state['blue_active'] and not game_state['game_over']:
-            if event.key == pygame.K_SPACE:
-                do_special_attack()
-            if event.key == pygame.K_f:
-                initiate_parry()
+        if event.type == pygame.KEYDOWN:
+            
+            # --- Game Control Keys ---
+            if game_state['blue_active'] and not game_state['game_over']:
+                if event.key == pygame.K_SPACE:
+                    do_special_attack()
+                if event.key == pygame.K_f:
+                    initiate_parry()
 
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_r and game_state['game_over']:
-            print("Restarting Game...")
-            reset_game_state()
-
-    # REMOVED: root.update() and all CTk related code
+            # --- System Keys ---
+            if event.key == pygame.K_r and game_state['game_over']:
+                print("Restarting Game...")
+                reset_game_state()
+            
+            # NEW: Escape key to return to menu
+            if event.key == pygame.K_ESCAPE and not game_state['game_over']:
+                 current_scene = 'menu'
+                 reset_game_state(keep_stats=True) # Reset game state before returning to menu
+                 print("Returning to Main Menu.")
 
     if game_state['game_over']:
 
