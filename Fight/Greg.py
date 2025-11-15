@@ -3,7 +3,7 @@ import random
 import sys
 import math
 import os
-import re # Added for parsing functionality
+import re
 
 pygame.init()
 
@@ -21,17 +21,14 @@ GREEN = (0, 200, 0)
 BRIGHT_GREEN = (0, 255, 0)
 GRAY = (200, 200, 200)
 DARK_GRAY = (100, 100, 100)
-BROWN = (139, 69, 19) # NEW: Color for Brown Cube
-PINK = (255, 192, 203) # NEW: Color for Pink Cube
-DARK_BLUE = (0, 0, 139) # NEW: Color for Dark Blue Cube
+BROWN = (139, 69, 19)
+PINK = (255, 192, 203)
+DARK_BLUE = (0, 0, 139)
 
 PURPLE_TUPLE = (128, 0, 128) 
 
 CUBE_SIZE = 50
 
-# --- NEW: CUBE STATS AND LOADING ---
-
-# Mapping cube colors (strings) to Pygame color tuples
 CUBE_COLOR_MAP = {
     'blue': BLUE,
     'red': RED,
@@ -41,48 +38,40 @@ CUBE_COLOR_MAP = {
     'dark blue': DARK_BLUE,
 }
 
-# The list that will hold all the cube data
 all_cubes_data = []
 
 def parse_cubes_file(file_content):
     """Parses the content of cubes.txt into a structured list of dictionaries."""
-    
-    # Clean up the input content, normalize 'attacks' vs 'attack'
+
     content = file_content.replace('attacks:', 'attack:').replace('attack:', 'attacks:')
 
-    # Split the content into blocks, one for each cube
     cube_blocks = re.split(r'cube \d+ stats:', content, flags=re.IGNORECASE)[1:]
-    
+
     cubes_list = []
     current_cube = {}
-    
-    # Helper to clean up data lines
+
     def clean_value(value):
-        # Cleans up the attack descriptions to look better in the list display
         return value.strip().replace('(windup)', '').replace('(bar)', '').replace('(inversts enemy\'s controls 3 seconds)', '').replace('(invert controls during pull 3 sec)', '').strip()
 
     for i, block in enumerate(cube_blocks):
         cube_index = i + 1
-        
+
         lines = block.strip().split('\n')
-        
+
         current_cube = {'id': cube_index}
-        
+
         for line in lines:
             line = line.strip()
-            
+
             if line.startswith('color:'):
                 current_cube['color'] = line.split(':', 1)[1].strip().lower()
             elif line.startswith('attacks:'):
-                # Clean and split attacks, handle commas
                 attacks_str = line.split(':', 1)[1].strip()
                 attacks = [clean_value(a) for a in attacks_str.split(',')]
                 current_cube['attacks'] = ", ".join(attacks)
             elif line.startswith('max hp:'):
                 current_cube['max hp'] = line.split(':', 1)[1].strip()
-        
-        # Override HP based on the external file structure if not found internally
-        # Logic derived from test.py to handle missing HP in source blocks 5 and 6
+
         if 'max hp' not in current_cube:
             if cube_index in [5, 6]:
                 current_cube['max hp'] = '75' 
@@ -91,7 +80,12 @@ def parse_cubes_file(file_content):
 
     return cubes_list
 
-CUBES_FILE_PATH = "cubes.txt" # NEW: Define the file path constant
+SAVE_DIR = "Save_file"
+CUBES_FILE_PATH = os.path.join(SAVE_DIR, "cubes.txt")
+STATS_FILE = os.path.join(SAVE_DIR, "stats.txt")
+DEBUG_FILE = os.path.join(SAVE_DIR, "debug.txt")
+ACHIEVEMENTS_FILE_PATH = os.path.join(SAVE_DIR, "achievements.txt") 
+is_debug_mode = False 
 
 def load_cubes_file_content(filepath):
     """Attempts to read the content of the cubes stats file."""
@@ -105,17 +99,86 @@ def load_cubes_file_content(filepath):
         print(f"Error reading cube stats file: {e}")
         return ""
 
-# NEW: Read from the file instead of the hardcoded string
 CUBES_FILE_CONTENT = load_cubes_file_content(CUBES_FILE_PATH)
 
-# Check if content was loaded before parsing (optional but good practice)
 if CUBES_FILE_CONTENT:
     all_cubes_data = parse_cubes_file(CUBES_FILE_CONTENT)
 else:
     all_cubes_data = []
     print("WARNING: No cube data loaded. 'Collected Cubes' scene will be empty.")
 
-# --- END NEW: CUBE STATS AND LOADING ---
+all_achievements_data = []
+
+def parse_achievements_file(file_content):
+    """Parses the content of achievements.txt into a structured list of dictionaries."""
+
+    achievements_list = []
+    current_achievement = {}
+
+    blocks = re.split(r'(achiev[e]?[mn]e?nt \d+)', file_content, flags=re.IGNORECASE)
+
+    for i in range(1, len(blocks), 2):
+
+        title_line = blocks[i].strip() 
+        content = blocks[i+1].strip() 
+
+        id_match = re.search(r'(\d+)', title_line)
+        if not id_match:
+            print(f"Warning: Skipping malformed achievement title: {title_line}")
+            continue
+        current_achievement['id'] = int(id_match.group(1))
+
+        lines = content.split('\n')
+
+        if lines and lines[0].strip().startswith('"'):
+            current_achievement['name'] = lines[0].strip().strip('"')
+        else:
+
+            current_achievement['name'] = f"Achievement {current_achievement['id']}"
+
+        for line in lines[1:]: 
+            line = line.strip()
+
+            if line.startswith('des:'):
+
+                current_achievement['description'] = line.split(':', 1)[1].strip().strip('"')
+            elif line.startswith('unlocks:'):
+
+                current_achievement['unlocks'] = line.split(':', 1)[1].strip().strip('"')
+
+            elif line.startswith('status:'):
+                status_value = line.split(':', 1)[1].strip().lower()
+                current_achievement['unlocked'] = (status_value == 'unlocked')
+
+        current_achievement.setdefault('description', 'No description provided.')
+        current_achievement.setdefault('unlocks', 'Nothing.')
+        current_achievement.setdefault('unlocked', False) 
+
+        achievements_list.append(current_achievement.copy())
+        current_achievement = {} 
+
+    return achievements_list
+
+def load_achievements_file_content(filepath):
+    """Attempts to read the content of the achievements file."""
+    if not os.path.exists(filepath):
+        print(f"Error: Achievement file not found at {filepath}")
+        return ""
+    try:
+        with open(filepath, 'r') as f:
+
+            content = f.read()
+            return content
+    except Exception as e:
+        print(f"Error reading achievement file: {e}")
+        return ""
+
+ACHIEVEMENTS_FILE_CONTENT = load_achievements_file_content(ACHIEVEMENTS_FILE_PATH)
+
+if ACHIEVEMENTS_FILE_CONTENT:
+    all_achievements_data = parse_achievements_file(ACHIEVEMENTS_FILE_CONTENT)
+else:
+    print("WARNING: No achievement data loaded.")
 
 blue_x = 20
 blue_y = HEIGHT // 2 - CUBE_SIZE // 2
@@ -123,47 +186,37 @@ red_x = WIDTH - CUBE_SIZE - 20
 red_y = HEIGHT // 2 - CUBE_SIZE // 2
 
 MOVE_SPEED = 5
-
 AI_MOVE_SPEED = 3
-
 ATTACK_RANGE = 100
 MAINTAIN_RANGE_MIN = 150
 MAINTAIN_RANGE_MAX = 350        
 RETREAT_HEALTH_THRESHOLD = 25   
-
 CHARGE_SPEED = 15              
 CHARGE_INITIATE_CHANCE = 0.001 
 CHARGE_FLASH_CYCLES = 2        
 FLASH_DURATION_MS = 200        
 ENDLAG_DURATION_MS = 2000      
 CHARGE_ATTACK_DAMAGE = 25      
-
 AI_SLASH_FLASH_CYCLES = 3       
 AI_FLASH_DURATION_MS = 150      
 AI_BEAM_RANGE = 300             
 AI_BEAM_WIDTH = 10              
 AI_BEAM_LENGTH = 700            
 AI_BEAM_SPEED = 0.1             
-
 ATTACK_DAMAGE = 20
-
 SPECIAL_ATTACK_DAMAGE = 25
 HITBOX_DURATION_MS = 500       
 SPECIAL_ATTACK_COOLDOWN_MS = 3000 
-
 AI_SPECIAL_ATTACK_DAMAGE = 30 
 AI_SPECIAL_HITBOX_DURATION_MS = 600
 AI_SPECIAL_ATTACK_COOLDOWN_MS = 4000 
 AI_SPECIAL_ATTACK_RANGE = 200        
-
 INITIAL_BLUE_ACTIVE = True
 INITIAL_RED_ACTIVE = True
 INITIAL_BLUE_HEALTH = 100
 INITIAL_RED_HEALTH = 100
 INITIAL_RED_CUBE_MODE = "Maintain"
-
-PARRY_WINDOW_DURATION_MS = 200 # Duration for the parry effect
-
+PARRY_WINDOW_DURATION_MS = 200 
 font = pygame.font.Font(None, 36)
 
 initial_game_state = {
@@ -199,20 +252,16 @@ initial_game_state = {
     'ai_last_direction': 'left', 
     'ai_special_attack_cooldown_timer': 0,
     'ai_attack_state': 'Idle',    
-    
+
     'parry_active': False,
-    'parry_timer': 0.0, # Added parry timer
+    'parry_timer': 0.0,
 }
 
 game_state = initial_game_state.copy()
 
-# NEW: Scene Management - Start the game in the menu
 current_scene = "menu" 
-
-STATS_FILE = "stats.txt" # Constant for the stats file
-# NEW: Debug file constant
-DEBUG_FILE = "debug.txt"
-is_debug_mode = False # Global flag for debug mode
+selected_cube_data = None 
+selected_mode = None 
 
 def load_stats():
     """Reads kill counts from stats.txt or initializes them."""
@@ -222,22 +271,20 @@ def load_stats():
             with open(STATS_FILE, 'r') as f:
                 lines = f.readlines()
                 if len(lines) >= 1:
-                    # Line 1: "red cube killed: X"
                     red_line = lines[0].strip()
                     if ":" in red_line:
                         stats['red_kills'] = int(red_line.split(':')[1].strip())
                 if len(lines) >= 2:
-                    # Line 2: "blue cube killed: X"
                     blue_line = lines[1].strip()
                     if ":" in blue_line:
                         stats['blue_kills'] = int(blue_line.split(':')[1].strip())
         except (IOError, ValueError) as e:
-            # If there's an error reading/parsing, we use the default 0s
             print(f"Error loading stats file, using defaults: {e}")
     return stats
 
 def save_stats(stats):
     """Writes kill counts to stats.txt in the required format."""
+    os.makedirs(SAVE_DIR, exist_ok=True)
     try:
         with open(STATS_FILE, 'w') as f:
             f.write(f"red cube killed: {stats['red_kills']}\n")
@@ -245,15 +292,21 @@ def save_stats(stats):
     except IOError as e:
         print(f"Error saving stats file: {e}")
 
-# Load stats on game start
 cube_stats = load_stats()
 
-# NEW: Helper function to draw text in the menu
-def draw_text(text, font_size, color, x, y):
-    """Draws centered text using a specified font size."""
+def draw_text(text, font_size, color, x, y, align='center'):
+    """Draws text using a specified font size with alignment."""
     text_font = pygame.font.Font(None, font_size)
     text_surface = text_font.render(text, True, color)
-    text_rect = text_surface.get_rect(center=(x, y))
+    text_rect = text_surface.get_rect()
+
+    if align == 'center':
+        text_rect.center = (x, y)
+    elif align == 'left':
+        text_rect.topleft = (x, y)
+    elif align == 'right':
+        text_rect.topright = (x, y)
+
     screen.blit(text_surface, text_rect)
 
 def draw_cube(x, y, color):
@@ -302,32 +355,25 @@ def draw_health_bars():
     blue_bar_width = int(MAX_BAR_WIDTH * blue_health_ratio)
     red_bar_width = int(MAX_BAR_WIDTH * red_health_ratio)
 
-    # Health bar positions are swapped from the original, assuming blue is player (left) and red is AI (right)
-    # Reverting to the original file's logic: Red bar is on the left, Blue bar is on the right
     blue_health_rect = pygame.Rect(WIDTH - MAX_BAR_WIDTH - 10, 10, blue_bar_width, 20)
     red_health_rect = pygame.Rect(10, 10, red_bar_width, 20)
 
-    # Draw the background/outline
     pygame.draw.rect(screen, (100, 100, 100), (WIDTH - MAX_BAR_WIDTH - 10, 10, MAX_BAR_WIDTH, 20), 1)
     pygame.draw.rect(screen, (100, 100, 100), (10, 10, MAX_BAR_WIDTH, 20), 1)
 
-    # Draw the filled health
     pygame.draw.rect(screen, BLUE, blue_health_rect)
     pygame.draw.rect(screen, RED, red_health_rect)
 
-    # Health text
     blue_health_text = font.render(f"Blue: {max(0, game_state['blue_health'])}", True, WHITE)
     red_health_text = font.render(f"Red: {max(0, game_state['red_health'])}", True, WHITE)
 
     screen.blit(blue_health_text, (WIDTH - MAX_BAR_WIDTH - 10, 35))
     screen.blit(red_health_text, (10, 35))
-    
-    # NEW: Kill Stats Display
+
     red_kills_text = font.render(f"Red Kills: {cube_stats['red_kills']}", True, RED)
     blue_kills_text = font.render(f"Blue Kills: {cube_stats['blue_kills']}", True, BLUE)
     screen.blit(red_kills_text, (10, HEIGHT - 40))
     screen.blit(blue_kills_text, (WIDTH - 150, HEIGHT - 40))
-
 
 def calculate_distance(x1, y1, x2, y2):
     """Calculates the Euclidean distance between the centers of two cubes."""
@@ -340,7 +386,6 @@ def move_ai(mode, target_x, target_y, current_x, current_y, speed, red_health):
     dx, dy = 0, 0
     distance = calculate_distance(current_x, current_y, target_x, target_y)
 
-    # Only calculate next mode if mode is NOT manually set 
     if mode not in ["Parried (Stun)", "Charge (Endlag)", "Charge (Windup)", "Charge", "Beam (Windup)"]:
 
         if red_health <= RETREAT_HEALTH_THRESHOLD and distance > MAINTAIN_RANGE_MAX:
@@ -355,17 +400,12 @@ def move_ai(mode, target_x, target_y, current_x, current_y, speed, red_health):
             mode = "Maintain"
 
     if mode == "Attack" or mode == "Close Gap":
-
         dx = target_x - current_x
         dy = target_y - current_y
-
     elif mode == "Defensive Retreat" or mode == "Back Off":
-
         dx = current_x - target_x
         dy = current_y - target_y
-
     elif mode == "Maintain":
-
         dx, dy = 0, 0
 
     move_x, move_y = 0, 0
@@ -381,8 +421,7 @@ def move_ai(mode, target_x, target_y, current_x, current_y, speed, red_health):
 
     move_x += random.uniform(-1, 1) * 0.5
     move_y += random.uniform(-1, 1) * 0.5
-    
-    # Only apply movement if the mode allows it
+
     if mode in ["Attack", "Close Gap", "Defensive Retreat", "Back Off"]:
         new_x = max(0, min(current_x + move_x, WIDTH - CUBE_SIZE))
         new_y = max(0, min(current_y + move_y, HEIGHT - CUBE_SIZE))
@@ -396,15 +435,12 @@ def check_hitbox_collision(hitbox_rect, target_x, target_y):
     """Checks if the target cube is inside the generated hitbox."""
     if not hitbox_rect:
         return False
-
     target_rect = pygame.Rect(target_x, target_y, CUBE_SIZE, CUBE_SIZE)
-
     return hitbox_rect.colliderect(target_rect)
 
 def do_special_attack():
     """Triggers the blue cube's special purple hitbox attack."""
 
-    # NEW: Check for debug mode - ignore cooldown if active
     if not is_debug_mode and game_state['special_attack_cooldown_timer'] > 0:
         return 
 
@@ -435,11 +471,10 @@ def do_special_attack():
     game_state['purple_hitbox_rect'] = hitbox_rect
     game_state['hitbox_timer'] = HITBOX_DURATION_MS
 
-    # Only set cooldown if debug mode is OFF
     if not is_debug_mode:
         game_state['special_attack_cooldown_timer'] = SPECIAL_ATTACK_COOLDOWN_MS
     else:
-        game_state['special_attack_cooldown_timer'] = 1 # Set to a non-zero, non-blocking value for debug
+        game_state['special_attack_cooldown_timer'] = 1 
 
 def initiate_parry():
     """
@@ -450,17 +485,16 @@ def initiate_parry():
 
     charge_windup_success = (
         game_state['charge_state'] == 'Windup' and 
-        game_state['flash_count'] == (CHARGE_FLASH_CYCLES * 2) and # Final black flash count
-        game_state['flash_timer'] > 0 # Currently in the final flash duration
+        game_state['flash_count'] == (CHARGE_FLASH_CYCLES * 2) and 
+        game_state['flash_timer'] > 0 
     )
 
     special_windup_success = (
         game_state['ai_attack_state'] == 'SpecialWindup' and
-        game_state['flash_count'] == (AI_SLASH_FLASH_CYCLES * 2) and # Final black flash count
-        game_state['flash_timer'] > 0 # Currently in the final flash duration
+        game_state['flash_count'] == (AI_SLASH_FLASH_CYCLES * 2) and
+        game_state['flash_timer'] > 0
     )
 
-    # SUCCESSFUL PARRY
     if charge_windup_success or special_windup_success:
         print("Successful Parry! Red Cube stunned.")
 
@@ -475,7 +509,6 @@ def initiate_parry():
         game_state['parry_active'] = True
         game_state['parry_timer'] = PARRY_WINDOW_DURATION_MS 
 
-    # FAILED PARRY
     else:
         print("Parry Attempt: Missed timing or no active windup.")
         game_state['parry_active'] = True
@@ -560,42 +593,80 @@ def execute_ai_special_attack():
     blue_cube_rect = pygame.Rect(game_state['blue_x'], game_state['blue_y'], CUBE_SIZE, CUBE_SIZE)
 
     if game_state['blue_active'] and beam_bounding_rect.colliderect(blue_cube_rect):
-        # NEW: Check for debug mode - take no damage if active
         if not is_debug_mode:
             game_state['blue_health'] -= AI_SPECIAL_ATTACK_DAMAGE
             print(f"Red Cube Beam hit! Damage: {AI_SPECIAL_ATTACK_DAMAGE}. Blue Health: {max(0, game_state['blue_health'])}")
         else:
             print("Red Cube Beam hit! (Debug Invincible)")
 
-
     game_state['ai_special_attack_cooldown_timer'] = AI_SPECIAL_ATTACK_COOLDOWN_MS
 
     game_state['ai_attack_state'] = 'Idle'
     game_state['red_cube_mode'] = "Maintain" 
 
-# NEW: Helper function for the Collected Cubes scene
-def draw_cube_preview(x, y, color_name):
-    """Draws a small cube preview."""
-    
-    # Get the Pygame color tuple
-    color = CUBE_COLOR_MAP.get(color_name.lower(), BLACK)
-    
-    PREVIEW_SIZE = 30
-    
-    pygame.draw.rect(screen, color, (x, y, PREVIEW_SIZE, PREVIEW_SIZE))
-    # Draw a white outline for dark cubes
-    if color_name.lower() in ['black', 'dark blue', 'brown']:
-        pygame.draw.rect(screen, WHITE, (x, y, PREVIEW_SIZE, PREVIEW_SIZE), 1)
+def draw_cube_preview(x, y, color_name, size=30):
+    """Draws a cube preview with an optional outline."""
 
-# NEW: Collected Cubes Scene
-def collected_cubes_scene():
-    """Renders the list of collected cubes and their stats."""
-    
+    color = CUBE_COLOR_MAP.get(color_name.lower(), BLACK)
+
+    rect = pygame.Rect(x, y, size, size)
+    pygame.draw.rect(screen, color, rect)
+
+    pygame.draw.rect(screen, WHITE, rect, 2)
+
+    return rect
+
+def draw_cube_detail_panel(cube_data):
+    """Draws the detailed stats panel for the selected cube."""
+
+    PANEL_WIDTH = 300
+    PANEL_HEIGHT = HEIGHT - 120 
+    PANEL_X = WIDTH - PANEL_WIDTH - 20
+    PANEL_Y = 80
+
+    pygame.draw.rect(screen, DARK_GRAY, (PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT), border_radius=10)
+    pygame.draw.rect(screen, WHITE, (PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT), 3, border_radius=10)
+
+    start_x = PANEL_X + 20
+    current_y = PANEL_Y + 20
+
+    draw_text(f"Cube {cube_data['id']} - Details", 36, WHITE, PANEL_X + PANEL_WIDTH // 2, current_y)
+    current_y += 50
+
+    preview_size = 80
+    preview_x = PANEL_X + PANEL_WIDTH // 2 - preview_size // 2
+    draw_cube_preview(preview_x, current_y, cube_data['color'], size=preview_size)
+    current_y += preview_size + 20
+
+    draw_text(f"Color: {cube_data['color'].capitalize()}", 28, WHITE, start_x, current_y, align='left')
+    current_y += 30
+
+    draw_text(f"Max HP: {cube_data.get('max hp', 'N/A')}", 28, WHITE, start_x, current_y, align='left')
+    current_y += 40
+
+    draw_text("Attacks:", 30, CYAN, start_x, current_y, align='left')
+    current_y += 30
+
+    attacks_text = cube_data.get('attacks', 'None')
+
+    if attacks_text.count(',') > 1:
+        attacks_list = [a.strip() for a in attacks_text.split(',')]
+    else:
+        attacks_list = [attacks_text.strip()]
+
+    for attack in attacks_list:
+        if current_y < PANEL_Y + PANEL_HEIGHT - 30: 
+            draw_text(f"- {attack}", 24, GRAY, start_x + 10, current_y, align='left')
+            current_y += 25
+
+def achievements_scene():
+    """Renders the list of achievements and their status."""
+
     global current_scene, running
 
     mouse_x, mouse_y = pygame.mouse.get_pos()
     click = False
-    
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -607,107 +678,190 @@ def collected_cubes_scene():
             current_scene = "menu"
             return
 
-
     screen.fill(BLACK) 
-    draw_text("COLLECTED CUBES", 50, WHITE, WIDTH // 2, 40)
 
-    # --- Back Button ---
+    WARNING_Y = 20
+    SECTION_TITLE_Y = 80 
+    LIST_START_Y = 140 
+
+    draw_text("DEMO FEATURE: ACHIEVEMENTS DON'T WORK YET", 30, RED, WIDTH // 2, WARNING_Y)
+
+    draw_text("--- ACHIEVEMENTS ---", 36, WHITE, WIDTH // 2, SECTION_TITLE_Y)
+
     button_width, button_height = 150, 40
     back_x = 70
-    back_y = 40
+    back_y = SECTION_TITLE_Y 
     back_rect = pygame.Rect(back_x - button_width // 2, back_y - button_height // 2, button_width, button_height)
-    
+
+    button_color = DARK_GRAY
+    if back_rect.collidepoint((mouse_x, mouse_y)):
+        button_color = GRAY
+        if click: 
+            current_scene = "menu"
+            return 
+
+    pygame.draw.rect(screen, button_color, back_rect, border_radius=5)
+    draw_text("Back (ESC)", 28, BLACK, back_x, back_y)
+
+    current_y = LIST_START_Y
+    start_x = 50
+    item_height = 75
+
+    for achievement in all_achievements_data:
+
+        box_rect = pygame.Rect(start_x, current_y, WIDTH - 100, item_height)
+
+        box_color = GREEN if achievement['unlocked'] else DARK_GRAY
+
+        pygame.draw.rect(screen, box_color, box_rect, border_radius=5)
+
+        text_color = BLACK if achievement['unlocked'] else WHITE
+
+        draw_text(f"#{achievement['id']} - {achievement['name']}", 30, text_color, start_x + 10, current_y + 10, align='left')
+
+        draw_text(f"Des: {achievement['description']}", 24, text_color, start_x + 10, current_y + 35, align='left')
+
+        draw_text(f"Unlocks: {achievement['unlocks']}", 24, text_color, start_x + 10, current_y + 55, align='left')
+
+        status_text = "UNLOCKED" if achievement['unlocked'] else "LOCKED"
+        status_color = BLACK if achievement['unlocked'] else RED
+        draw_text(status_text, 30, status_color, WIDTH - 60, current_y + item_height // 2, align='right')
+
+        current_y += item_height + 10
+
+    pygame.display.flip()
+
+def mode_select_menu():
+    global current_scene, running, selected_mode
+
+    mouse_x, mouse_y = pygame.mouse.get_pos() 
+    click = False
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                click = True
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            current_scene = "menu"
+            return
+
+    screen.fill(BLACK) 
+
+    draw_text("SELECT GAME MODE", 72, WHITE, WIDTH // 2, HEIGHT // 4)
+
+    button_width, button_height = 350, 60
+    center_x = WIDTH // 2
+
+    ai_y = HEIGHT // 2
+    player_y = ai_y + button_height + 30 
+    back_y = player_y + button_height + 30
+
+    ai_rect = pygame.Rect(center_x - button_width // 2, ai_y - button_height // 2, button_width, button_height)
+
+    button_color = RED 
+    if ai_rect.collidepoint((mouse_x, mouse_y)):
+        button_color = (255, 100, 100)
+        if click:
+            selected_mode = 'ai'
+            current_scene = "game"
+            reset_game_state(keep_stats=True) 
+            return 
+
+    pygame.draw.rect(screen, button_color, ai_rect, border_radius=10)
+    draw_text("PLAYER vs. AI (Broken)", 36, BLACK, center_x, ai_y)
+
+    player_rect = pygame.Rect(center_x - button_width // 2, player_y - button_height // 2, button_width, button_height)
+
+    button_color = BLUE
+    if player_rect.collidepoint((mouse_x, mouse_y)):
+        button_color = CYAN
+        if click:
+            current_scene = "menu"
+            print("Player vs. Player is a placeholder and not implemented yet.")
+            return 
+
+    pygame.draw.rect(screen, button_color, player_rect, border_radius=10)
+    draw_text("PLAYER vs. PLAYER (Placeholder)", 36, BLACK, center_x, player_y)
+
+    back_rect = pygame.Rect(center_x - button_width // 2, back_y - button_height // 2, button_width, button_height)
+
     button_color = DARK_GRAY
     if back_rect.collidepoint((mouse_x, mouse_y)):
         button_color = GRAY
         if click:
             current_scene = "menu"
             return 
-    
-    pygame.draw.rect(screen, button_color, back_rect, border_radius=5)
-    draw_text("Back (ESC)", 28, BLACK, back_x, back_y)
-    
-    # --- Cube List Display ---
-    
-    start_y = 100
-    line_height = 50
-    left_padding = 50
-    
-    for i, cube in enumerate(all_cubes_data):
-        y_pos = start_y + i * line_height
-        
-        # 1. Cube ID and Preview
-        draw_text(f"Cube {cube['id']}", 32, WHITE, left_padding + 50, y_pos)
-        draw_cube_preview(left_padding - 5, y_pos - 15, cube['color'])
-        
-        # 2. Stats
-        stats_text = f"Color: {cube['color'].capitalize()} | Attacks: {cube.get('attacks', 'N/A')} | Max HP: {cube.get('max hp', 'N/A')}"
-        # Adjust position for the text to fit better
-        draw_text(stats_text, 24, WHITE, WIDTH // 2 + 100, y_pos)
-    
+
+    pygame.draw.rect(screen, button_color, back_rect, border_radius=10)
+    draw_text("BACK", 36, BLACK, center_x, back_y)
+
     pygame.display.flip()
 
-# Main Menu Scene - UPDATED to include COLLECTED CUBES button
 def main_menu():
     global current_scene, running
 
     mouse_x, mouse_y = pygame.mouse.get_pos()
     click = False
-    
-    # Process menu-specific events
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
             return
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1: # Left click
+            if event.button == 1:
                 click = True
 
-    # Draw Background
     screen.fill(BLACK) 
-    
-    # Draw Title
-    draw_text("CUBE COMBAT", 72, RED, WIDTH // 2, HEIGHT // 4)
 
-    # Define button dimensions
+    draw_text("CUBE COMBAT", 72, RED, WIDTH // 2, HEIGHT // 5)
+
     button_width, button_height = 250, 60
     center_x = WIDTH // 2
-    
-    # Button positions are staggered vertically
-    start_y = HEIGHT // 2
-    collected_y = start_y + button_height + 30 # New button position
-    quit_y = collected_y + button_height + 30
 
-    # --- Start Button ---
+    start_y = HEIGHT // 2 - 50
+    collected_y = start_y + button_height + 30 
+    achievements_y = collected_y + button_height + 30 
+    quit_y = achievements_y + button_height + 30
+
     start_rect = pygame.Rect(center_x - button_width // 2, start_y - button_height // 2, button_width, button_height)
-    
+
     button_color = GREEN
     if start_rect.collidepoint((mouse_x, mouse_y)):
         button_color = BRIGHT_GREEN
         if click:
-            current_scene = "game"
-            # Ensure the game state is clean when starting from the menu
-            reset_game_state(keep_stats=True) 
+            current_scene = "mode_select" 
             return 
-    
+
     pygame.draw.rect(screen, button_color, start_rect, border_radius=10)
     draw_text("START GAME", 36, BLACK, center_x, start_y)
-    
-    # --- NEW: Collected Cubes Button ---
+
     collected_rect = pygame.Rect(center_x - button_width // 2, collected_y - button_height // 2, button_width, button_height)
-    
+
     button_color = BLUE
     if collected_rect.collidepoint((mouse_x, mouse_y)):
         button_color = CYAN
         if click:
-            current_scene = "collected_cubes" # Switch to the new scene
+            current_scene = "collected_cubes" 
             return 
 
     pygame.draw.rect(screen, button_color, collected_rect, border_radius=10)
     draw_text("COLLECTED CUBES", 36, BLACK, center_x, collected_y)
 
+    achievements_rect = pygame.Rect(center_x - button_width // 2, achievements_y - button_height // 2, button_width, button_height)
 
-    # --- Quit Button ---
+    button_color = PINK 
+    if achievements_rect.collidepoint((mouse_x, mouse_y)):
+        button_color = (255, 100, 150)
+        if click:
+            current_scene = "achievements" 
+            return 
+
+    pygame.draw.rect(screen, button_color, achievements_rect, border_radius=10)
+    draw_text("ACHIEVEMENTS", 36, BLACK, center_x, achievements_y)
+
     quit_rect = pygame.Rect(center_x - button_width // 2, quit_y - button_height // 2, button_width, button_height)
 
     button_color = DARK_GRAY
@@ -719,24 +873,96 @@ def main_menu():
 
     pygame.draw.rect(screen, button_color, quit_rect, border_radius=10)
     draw_text("QUIT", 36, BLACK, center_x, quit_y)
-    
-    # Display the result
+
+    pygame.display.flip()
+
+def collected_cubes_scene():
+    """Renders the list of collected cubes in a grid and a detailed stats panel."""
+
+    global current_scene, running, selected_cube_data
+
+    mouse_x, mouse_y = pygame.mouse.get_pos()
+    click = False
+
+    GRID_START_X = 50
+    GRID_START_Y = 100
+    CUBE_DISPLAY_SIZE = 60
+    PADDING = 20
+    COLUMNS = 3
+
+    cube_rects = []
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1: 
+                click = True
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            current_scene = "menu"
+            selected_cube_data = None
+            return
+
+    screen.fill(BLACK) 
+    draw_text("COLLECTED CUBES", 50, WHITE, WIDTH // 2, 40)
+
+    button_width, button_height = 150, 40
+    back_x = 70
+    back_y = 40
+    back_rect = pygame.Rect(back_x - button_width // 2, back_y - button_height // 2, button_width, button_height)
+
+    button_color = DARK_GRAY
+    if back_rect.collidepoint((mouse_x, mouse_y)):
+        button_color = GRAY
+        if click: 
+            current_scene = "menu"
+            selected_cube_data = None
+            return 
+
+    pygame.draw.rect(screen, button_color, back_rect, border_radius=5)
+    draw_text("Back (ESC)", 28, BLACK, back_x, back_y)
+
+    for i, cube in enumerate(all_cubes_data):
+        col = i % COLUMNS
+        row = i // COLUMNS
+
+        x_pos = GRID_START_X + col * (CUBE_DISPLAY_SIZE + PADDING)
+        y_pos = GRID_START_Y + row * (CUBE_DISPLAY_SIZE + PADDING)
+
+        cube_rect = draw_cube_preview(x_pos, y_pos, cube['color'], size=CUBE_DISPLAY_SIZE)
+        cube_rects.append(cube_rect)
+
+        if selected_cube_data and cube['id'] == selected_cube_data['id']:
+            pygame.draw.rect(screen, BRIGHT_GREEN, cube_rect, 5, border_radius=5)
+
+        draw_text(f"ID: {cube['id']}", 24, WHITE, x_pos + CUBE_DISPLAY_SIZE // 2, y_pos + CUBE_DISPLAY_SIZE + 5)
+
+    if click:
+        for i, rect in enumerate(cube_rects):
+            if rect.collidepoint((mouse_x, mouse_y)):
+                selected_cube_data = all_cubes_data[i]
+                print(f"Selected Cube {selected_cube_data['id']}")
+                break
+
+    if selected_cube_data:
+        draw_cube_detail_panel(selected_cube_data)
+    else:
+        draw_text("Click a Cube to View Details", 36, DARK_GRAY, WIDTH * 0.75, HEIGHT // 2)
+
     pygame.display.flip()
 
 def reset_game_state(keep_stats=True):
     """
     Resets all game variables to their initial state.
-    If keep_stats is False, kill counts are also reset (e.g., on initial load).
     """
 
     global game_state
 
-    # Don't reset kill stats unless explicitly told not to (only on initial load in a real game)
     if not keep_stats:
         global cube_stats
         cube_stats = {'red_kills': 0, 'blue_kills': 0}
         save_stats(cube_stats)
-
 
     game_state['blue_active'] = INITIAL_BLUE_ACTIVE
     game_state['red_active'] = INITIAL_RED_ACTIVE
@@ -766,10 +992,10 @@ def reset_game_state(keep_stats=True):
     game_state['ai_special_attack_cooldown_timer'] = 0
     game_state['ai_last_direction'] = 'left'
     game_state['ai_attack_state'] = 'Idle' 
-    
+
     game_state['parry_active'] = False
     game_state['parry_timer'] = 0.0
-    
+
     print("Game state reset.")
 
 def check_debug_file():
@@ -795,9 +1021,6 @@ def check_debug_file():
             print(f"Error reading debug file, disabling debug: {e}")
         return False
 
-
-# --- Main Game Loop ---
-
 running = True
 clock = pygame.time.Clock()
 
@@ -805,44 +1028,43 @@ while running:
 
     dt = clock.tick(60) 
 
-    # Scene Switch: If we're in the menu, run menu logic and skip the game loop
     if current_scene == "menu":
         main_menu()
         continue
-    
-    # NEW: Handle the new scene
+
+    if current_scene == "mode_select": 
+        mode_select_menu()
+        continue
+
     if current_scene == "collected_cubes":
         collected_cubes_scene()
         continue
 
-    # --- GAME SCENE LOGIC STARTS HERE ---
+    if current_scene == "achievements": 
+        achievements_scene()
+        continue
 
-    # NEW: Check the debug file at the start of every frame
     is_debug_mode = check_debug_file() 
-    
-    # Process game-specific events
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
         if event.type == pygame.KEYDOWN:
-            
-            # --- Game Control Keys ---
+
             if game_state['blue_active'] and not game_state['game_over']:
                 if event.key == pygame.K_SPACE:
                     do_special_attack()
                 if event.key == pygame.K_f:
                     initiate_parry()
 
-            # --- System Keys ---
             if event.key == pygame.K_r and game_state['game_over']:
                 print("Restarting Game...")
                 reset_game_state()
-            
-            # NEW: Escape key to return to menu
+
             if event.key == pygame.K_ESCAPE and not game_state['game_over']:
                  current_scene = 'menu'
-                 reset_game_state(keep_stats=True) # Reset game state before returning to menu
+                 reset_game_state(keep_stats=True) 
                  print("Returning to Main Menu.")
 
     if game_state['game_over']:
@@ -866,7 +1088,6 @@ while running:
     keys = pygame.key.get_pressed()
     current_move_speed = game_state.get('move_speed', MOVE_SPEED)
 
-    # --- Blue Cube Movement and Timers ---
     if game_state['blue_active']:
 
         dx, dy = 0, 0
@@ -903,23 +1124,19 @@ while running:
             game_state['purple_hitbox_active'] = False
             game_state['purple_hitbox_rect'] = None
 
-    # NEW: Cooldown timer handling is modified for debug mode
     if game_state['special_attack_cooldown_timer'] > 0:
         if not is_debug_mode:
             game_state['special_attack_cooldown_timer'] -= dt
         else:
-            # If debug, ensure the timer is practically zero but non-zero to satisfy the check in do_special_attack
             game_state['special_attack_cooldown_timer'] = 1 
-            
+
         if game_state['special_attack_cooldown_timer'] < 0:
             game_state['special_attack_cooldown_timer'] = 0
 
-    # --- AI Timers ---
     if game_state['ai_cyan_beam_active']:
         game_state['ai_hitbox_timer'] -= dt
 
         if game_state['ai_hitbox_timer'] > 0:
-            # Beam continues to track the player during the active hitbox duration
             target_x, target_y = game_state['blue_x'], game_state['blue_y']
             red_center_x = game_state['red_x'] + CUBE_SIZE / 2
             red_center_y = game_state['red_y'] + CUBE_SIZE / 2
@@ -936,7 +1153,6 @@ while running:
         if game_state['ai_special_attack_cooldown_timer'] < 0:
             game_state['ai_special_attack_cooldown_timer'] = 0
 
-    # --- AI Logic (Red Cube) ---
     if game_state['red_active']:
 
         target_x, target_y = game_state['blue_x'], game_state['blue_y']
@@ -960,7 +1176,6 @@ while running:
                 else:
                     game_state['flash_timer'] = AI_FLASH_DURATION_MS
 
-            # Track player during windup
             target_x, target_y = game_state['blue_x'], game_state['blue_y']
             red_center_x = game_state['red_x'] + CUBE_SIZE / 2
             red_center_y = game_state['red_y'] + CUBE_SIZE / 2
@@ -1000,10 +1215,9 @@ while running:
                     )
                     game_state['red_x'] = new_red_x
                     game_state['red_y'] = new_red_y
-                    
+
                     if game_state['red_cube_mode'] != new_mode:
                         game_state['red_cube_mode'] = new_mode
-                        
 
             elif game_state['charge_state'] == 'Windup':
                 game_state['flash_timer'] -= dt
@@ -1055,7 +1269,6 @@ while running:
                 else:
                     game_state['red_cube_mode'] = "Charge (Endlag)"
 
-    # --- Collision Check (Red Cube Charge) ---
     is_charging = game_state['charge_state'] == 'Charging'
 
     if is_charging:
@@ -1066,19 +1279,15 @@ while running:
             game_state['blue_y'] + CUBE_SIZE > game_state['red_y']):
 
             if game_state['blue_active'] and game_state['blue_health'] > 0:
-                # NEW: Check for debug mode - take no damage if active
                 if not is_debug_mode:
                     game_state['blue_health'] -= CHARGE_ATTACK_DAMAGE 
                     print(f"Red Cube Charge hit! Damage: {CHARGE_ATTACK_DAMAGE}. Blue Health: {max(0, game_state['blue_health'])}")
                 else:
                     print("Red Cube Charge hit! (Debug Invincible)")
 
-
-    # --- Win Condition and Debug Respawn ---
     if game_state['blue_health'] <= 0:
         if game_state['blue_active']:
             print("Blue Cube Defeated!")
-            # Blue Cube is defeated, Red Cube wins
             cube_stats['red_kills'] += 1
             save_stats(cube_stats)
         game_state['blue_active'] = False
@@ -1087,14 +1296,11 @@ while running:
     if game_state['red_health'] <= 0:
         if game_state['red_active']:
             print("Red Cube Defeated!")
-            # Red Cube is defeated, Blue Cube wins
             cube_stats['blue_kills'] += 1
             save_stats(cube_stats)
-            
-            # NEW: Red Cube Respawn in debug mode
+
             if is_debug_mode:
                 print("Debug Mode: Red Cube Respawning...")
-                # Reset only the Red Cube's state, but keep player health/position
                 game_state['red_active'] = INITIAL_RED_ACTIVE
                 game_state['red_health'] = INITIAL_RED_HEALTH
                 game_state['red_x'] = red_x
@@ -1107,13 +1313,11 @@ while running:
                 game_state['red_active'] = False
                 game_state['game_over'] = True
 
-
-    # --- Drawing ---
     screen.fill(WHITE)
 
     blue_cube_color = get_blue_cube_color(game_state)
     draw_cube(game_state['blue_x'], game_state['blue_y'], blue_cube_color)
-    
+
     draw_health_bars()
 
     if game_state['purple_hitbox_active'] and game_state['purple_hitbox_rect']:
