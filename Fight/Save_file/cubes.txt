@@ -20,7 +20,7 @@ cube 4 stats:
 
 cube 5 stats:
     color: brown
-    attacks: kidnap (inversts enemy's controls 3 seconds), laser (windup)
+    attacks: kick, laser (windup)
     max hp: 75
 
 cube 6 stats:
