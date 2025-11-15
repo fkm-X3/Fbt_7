@@ -1,0 +1,19 @@
+achievemnt 1 "test achivemnt"
+    des: "unlocked example achivemnt"
+    unlocks: "debug mode"
+    status: unlocked
+
+achievement 2 "2nd test achivemnt"
+    des: "locked example achivment"
+    unlocks: "fkm-X3"
+    status: locked
+
+achievement 3 "im not gonna sugar coat it"
+    des: "parry any attack and follow it up with a slash"
+    unlocks: "guest 1337 cube"
+    status: locked
+
+achievment 4 "filled with determination"
+    des: "beat the Dev only killer while bellow 25%"
+    unlocks: "Jxd1"
+    status: locked
