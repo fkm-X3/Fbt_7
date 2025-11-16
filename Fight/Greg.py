@@ -36,6 +36,8 @@ CUBE_COLOR_MAP = {
     'pink': PINK,
     'brown': BROWN,
     'dark blue': DARK_BLUE,
+
+    '<undefined>': GRAY, 
 }
 
 all_cubes_data = []
@@ -51,6 +53,7 @@ def parse_cubes_file(file_content):
     current_cube = {}
 
     def clean_value(value):
+        """Helper to remove parenthetical notes from attack names."""
         return value.strip().replace('(windup)', '').replace('(bar)', '').replace('(inversts enemy\'s controls 3 seconds)', '').replace('(invert controls during pull 3 sec)', '').strip()
 
     for i, block in enumerate(cube_blocks):
@@ -63,7 +66,11 @@ def parse_cubes_file(file_content):
         for line in lines:
             line = line.strip()
 
-            if line.startswith('color:'):
+            if line.startswith('short_hand:'):
+                current_cube['short_hand'] = line.split(':', 1)[1].strip()
+            elif line.startswith('name:'):
+                current_cube['name'] = line.split(':', 1)[1].strip()
+            elif line.startswith('color:'):
                 current_cube['color'] = line.split(':', 1)[1].strip().lower()
             elif line.startswith('attacks:'):
                 attacks_str = line.split(':', 1)[1].strip()
@@ -71,6 +78,12 @@ def parse_cubes_file(file_content):
                 current_cube['attacks'] = ", ".join(attacks)
             elif line.startswith('max hp:'):
                 current_cube['max hp'] = line.split(':', 1)[1].strip()
+
+        if 'name' not in current_cube:
+            current_cube['name'] = f"Cube {current_cube['id']}"
+
+        if 'color' not in current_cube:
+            current_cube['color'] = '<undefined>'
 
         if 'max hp' not in current_cube:
             if cube_index in [5, 6]:
@@ -117,7 +130,7 @@ def parse_achievements_file(file_content):
 
     blocks = re.split(r'(achiev[e]?[mn]e?nt \d+)', file_content, flags=re.IGNORECASE)
 
-    for i in range(1, len(blocks), 2):
+    for i in range(1, len(blocks), 2): 
 
         title_line = blocks[i].strip() 
         content = blocks[i+1].strip() 
@@ -191,12 +204,12 @@ ATTACK_RANGE = 100
 MAINTAIN_RANGE_MIN = 150
 MAINTAIN_RANGE_MAX = 350        
 RETREAT_HEALTH_THRESHOLD = 25   
-CHARGE_SPEED = 15              
-CHARGE_INITIATE_CHANCE = 0.001 
-CHARGE_FLASH_CYCLES = 2 
-FLASH_DURATION_MS = 200        
-ENDLAG_DURATION_MS = 2000      
-CHARGE_ATTACK_DAMAGE = 25      
+CHARGE_SPEED = 15               
+CHARGE_INITIATE_CHANCE = 0.001  
+CHARGE_FLASH_CYCLES = 2         
+FLASH_DURATION_MS = 200         
+ENDLAG_DURATION_MS = 2000       
+CHARGE_ATTACK_DAMAGE = 25       
 AI_SLASH_FLASH_CYCLES = 4       
 AI_FLASH_DURATION_MS = 150      
 AI_BEAM_RANGE = 300             
@@ -205,7 +218,7 @@ AI_BEAM_LENGTH = 700
 AI_BEAM_SPEED = 0.1             
 ATTACK_DAMAGE = 20
 SPECIAL_ATTACK_DAMAGE = 25
-HITBOX_DURATION_MS = 500       
+HITBOX_DURATION_MS = 500        
 SPECIAL_ATTACK_COOLDOWN_MS = 3000 
 AI_SPECIAL_ATTACK_DAMAGE = 30 
 AI_SPECIAL_HITBOX_DURATION_MS = 600
@@ -215,7 +228,7 @@ INITIAL_BLUE_ACTIVE = True
 INITIAL_RED_ACTIVE = True
 INITIAL_BLUE_HEALTH = 100
 INITIAL_RED_HEALTH = 100
-INITIAL_RED_CUBE_MODE = "Maintain"
+INITIAL_RED_CUBE_MODE = "Maintain" 
 PARRY_WINDOW_DURATION_MS = 200 
 
 P2_CHARGE_FLASH_CYCLES = 3 
@@ -268,6 +281,15 @@ current_scene = "menu"
 selected_cube_data = None 
 selected_mode = None 
 
+initial_char_select_state = {
+    'p1_selection_id': None,
+    'p2_selection_id': None,
+    'current_player': 'P1', 
+    'message': "",
+    'cube_rects': [] 
+}
+character_select_state = initial_char_select_state.copy()
+
 def load_stats():
     """Reads kill counts from stats.txt or initializes them."""
     stats = {'red_kills': 0, 'blue_kills': 0}
@@ -285,6 +307,8 @@ def load_stats():
                         stats['blue_kills'] = int(blue_line.split(':')[1].strip())
         except (IOError, ValueError) as e:
             print(f"Error loading stats file, using defaults: {e}")
+
+            os.makedirs(SAVE_DIR, exist_ok=True)
     return stats
 
 def save_stats(stats):
@@ -345,7 +369,7 @@ def get_red_cube_color(state):
                 return BLACK
         return RED 
 
-    return RED
+    return RED 
 
 def get_blue_cube_color(state):
     """
@@ -356,6 +380,7 @@ def get_blue_cube_color(state):
     return BLUE
 
 def draw_health_bars():
+    """Draws P1 and P2/AI health bars and kill counts."""
 
     blue_health_ratio = max(0, game_state['blue_health'] / 100)
     red_health_ratio = max(0, game_state['red_health'] / 100)
@@ -414,12 +439,15 @@ def move_ai(mode, target_x, target_y, current_x, current_y, speed, red_health):
             mode = "Maintain"
 
     if mode == "Attack" or mode == "Close Gap":
+
         dx = target_x - current_x
         dy = target_y - current_y
     elif mode == "Defensive Retreat" or mode == "Back Off":
+
         dx = current_x - target_x
         dy = current_y - target_y
     elif mode == "Maintain":
+
         dx, dy = 0, 0
 
     move_x, move_y = 0, 0
@@ -440,6 +468,7 @@ def move_ai(mode, target_x, target_y, current_x, current_y, speed, red_health):
         new_x = max(0, min(current_x + move_x, WIDTH - CUBE_SIZE))
         new_y = max(0, min(current_y + move_y, HEIGHT - CUBE_SIZE))
     else:
+
         new_x = current_x
         new_y = current_y
 
@@ -513,24 +542,40 @@ def initiate_ai_special_attack_windup_red():
     game_state['flash_timer'] = AI_FLASH_DURATION_MS 
     game_state['red_cube_mode'] = "Beam (Windup)" 
 
-    target_x, target_y = game_state['blue_x'], game_state['blue_y']
-    red_center_x = game_state['red_x'] + CUBE_SIZE / 2
-    red_center_y = game_state['red_y'] + CUBE_SIZE / 2
+    if selected_mode == 'pvp':
+        direction = game_state['ai_last_direction']
+        if direction == 'left':
+            game_state['ai_beam_angle'] = math.pi 
+        elif direction == 'right':
+            game_state['ai_beam_angle'] = 0 
+        elif direction == 'up':
+            game_state['ai_beam_angle'] = -math.pi / 2 
+        elif direction == 'down':
+            game_state['ai_beam_angle'] = math.pi / 2 
 
-    dx = target_x + CUBE_SIZE / 2 - red_center_x
-    dy = target_y + CUBE_SIZE / 2 - red_center_y
+    else:
+        target_x, target_y = game_state['blue_x'], game_state['blue_y']
+        red_center_x = game_state['red_x'] + CUBE_SIZE / 2
+        red_center_y = game_state['red_y'] + CUBE_SIZE / 2
 
-    game_state['ai_beam_angle'] = math.atan2(dy, dx)
+        dx = target_x + CUBE_SIZE / 2 - red_center_x
+        dy = target_y + CUBE_SIZE / 2 - red_center_y
+
+        game_state['ai_beam_angle'] = math.atan2(dy, dx)
 
 def execute_ai_special_attack_red():
     """
     Triggers the P2 beam attack. Handles visual display and collision check.
+    (This function is ONLY for P2, AI uses execute_ai_special_attack)
     """
 
     game_state['ai_cyan_beam_active'] = True
     game_state['ai_hitbox_timer'] = AI_SPECIAL_HITBOX_DURATION_MS
 
-    if game_state['blue_active']:
+    beam_surface, beam_rect = get_ai_beam_rect()
+    blue_cube_rect = pygame.Rect(game_state['blue_x'], game_state['blue_y'], CUBE_SIZE, CUBE_SIZE)
+
+    if game_state['blue_active'] and beam_rect.colliderect(blue_cube_rect):
         if not is_debug_mode:
             game_state['blue_health'] -= AI_SPECIAL_ATTACK_DAMAGE
             print(f"Red Cube Beam hit! Damage: {AI_SPECIAL_ATTACK_DAMAGE}. Blue Health: {max(0, game_state['blue_health'])}")
@@ -545,6 +590,7 @@ def execute_ai_special_attack_red():
 def initiate_parry():
     """
     Initiates the Blue Cube's parry.
+    Checks if it successfully parried an attack windup.
     """
     if not game_state['blue_active'] or game_state['game_over']:
         return
@@ -559,15 +605,15 @@ def initiate_parry():
 
     special_windup_success = (
         game_state['ai_attack_state'] == 'SpecialWindup' and
-        game_state['flash_count'] == (AI_SLASH_FLASH_CYCLES * 2) and
+        game_state['flash_count'] == (AI_SLASH_FLASH_CYCLES * 2) and 
         game_state['flash_timer'] > 0
     )
 
     if charge_windup_success or special_windup_success:
         print("Successful Parry! Red Cube stunned.")
 
-        game_state['charge_state'] = 'Endlag'
-        game_state['endlag_timer'] = ENDLAG_DURATION_MS * 2
+        game_state['charge_state'] = 'Endlag' 
+        game_state['endlag_timer'] = ENDLAG_DURATION_MS * 2 
         game_state['red_cube_mode'] = "Parried (Stun)"
 
         game_state['ai_attack_state'] = 'Idle'
@@ -579,6 +625,7 @@ def initiate_parry():
 
     else:
         print("Parry Attempt: Missed timing or no active windup.")
+
         game_state['parry_active'] = True
         game_state['parry_timer'] = PARRY_WINDOW_DURATION_MS // 2 
 
@@ -638,6 +685,7 @@ def get_ai_beam_rect():
 def execute_ai_special_attack():
     """
     Triggers the AI beam attack. Handles visual display and collision check.
+    (This function is ONLY for AI)
     """
 
     game_state['ai_cyan_beam_active'] = True
@@ -648,19 +696,14 @@ def execute_ai_special_attack():
     red_center_x = game_state['red_x'] + CUBE_SIZE / 2
     red_center_y = game_state['red_y'] + CUBE_SIZE / 2
 
+    beam_start_x = red_center_x + (CUBE_SIZE / 2) * math.cos(angle)
+    beam_start_y = red_center_y + (CUBE_SIZE / 2) * math.sin(angle)
     beam_end_x = red_center_x + AI_BEAM_LENGTH * math.cos(angle)
     beam_end_y = red_center_y + AI_BEAM_LENGTH * math.sin(angle)
 
-    x_min = min(red_center_x, beam_end_x) - CUBE_SIZE 
-    x_max = max(red_center_x, beam_end_x) + CUBE_SIZE
-    y_min = min(red_center_y, beam_end_y) - CUBE_SIZE
-    y_max = max(red_center_y, beam_end_y) + CUBE_SIZE
-
-    beam_bounding_rect = pygame.Rect(x_min, y_min, x_max - x_min, y_max - y_min)
-
     blue_cube_rect = pygame.Rect(game_state['blue_x'], game_state['blue_y'], CUBE_SIZE, CUBE_SIZE)
 
-    if game_state['blue_active'] and beam_bounding_rect.colliderect(blue_cube_rect):
+    if game_state['blue_active'] and blue_cube_rect.clipline(beam_start_x, beam_start_y, beam_end_x, beam_end_y):
         if not is_debug_mode:
             game_state['blue_health'] -= AI_SPECIAL_ATTACK_DAMAGE
             print(f"Red Cube Beam hit! Damage: {AI_SPECIAL_ATTACK_DAMAGE}. Blue Health: {max(0, game_state['blue_health'])}")
@@ -675,12 +718,12 @@ def execute_ai_special_attack():
 def draw_cube_preview(x, y, color_name, size=30):
     """Draws a cube preview with an optional outline."""
 
-    color = CUBE_COLOR_MAP.get(color_name.lower(), BLACK)
+    color = CUBE_COLOR_MAP.get(color_name.lower(), GRAY) 
 
     rect = pygame.Rect(x, y, size, size)
     pygame.draw.rect(screen, color, rect)
 
-    pygame.draw.rect(screen, WHITE, rect, 2)
+    pygame.draw.rect(screen, WHITE, rect, 2) 
 
     return rect
 
@@ -698,7 +741,8 @@ def draw_cube_detail_panel(cube_data):
     start_x = PANEL_X + 20
     current_y = PANEL_Y + 20
 
-    draw_text(f"Cube {cube_data['id']} - Details", 36, WHITE, PANEL_X + PANEL_WIDTH // 2, current_y)
+    panel_title = cube_data.get('name', f"Cube {cube_data['id']}").title()
+    draw_text(f"{panel_title} - Details", 36, WHITE, PANEL_X + PANEL_WIDTH // 2, current_y)
     current_y += 50
 
     preview_size = 80
@@ -717,7 +761,7 @@ def draw_cube_detail_panel(cube_data):
 
     attacks_text = cube_data.get('attacks', 'None')
 
-    if attacks_text.count(',') > 1:
+    if ',' in attacks_text:
         attacks_list = [a.strip() for a in attacks_text.split(',')]
     else:
         attacks_list = [attacks_text.strip()]
@@ -752,7 +796,7 @@ def achievements_scene():
     SECTION_TITLE_Y = 80 
     LIST_START_Y = 140 
 
-    draw_text("DEMO FEATURE: ACHIEVEMENTS DON'T WORK YET", 30, RED, WIDTH // 2, WARNING_Y)
+    draw_text("DEMO FEATURE: WIP", 30, RED, WIDTH // 2, WARNING_Y)
 
     draw_text("--- ACHIEVEMENTS ---", 36, WHITE, WIDTH // 2, SECTION_TITLE_Y)
 
@@ -780,15 +824,12 @@ def achievements_scene():
         box_rect = pygame.Rect(start_x, current_y, WIDTH - 100, item_height)
 
         box_color = GREEN if achievement['unlocked'] else DARK_GRAY
-
         pygame.draw.rect(screen, box_color, box_rect, border_radius=5)
 
         text_color = BLACK if achievement['unlocked'] else WHITE
 
         draw_text(f"#{achievement['id']} - {achievement['name']}", 30, text_color, start_x + 10, current_y + 10, align='left')
-
         draw_text(f"Des: {achievement['description']}", 24, text_color, start_x + 10, current_y + 35, align='left')
-
         draw_text(f"Unlocks: {achievement['unlocks']}", 24, text_color, start_x + 10, current_y + 55, align='left')
 
         status_text = "UNLOCKED" if achievement['unlocked'] else "LOCKED"
@@ -800,7 +841,7 @@ def achievements_scene():
     pygame.display.flip()
 
 def mode_select_menu():
-    global current_scene, running, selected_mode
+    global current_scene, running, selected_mode, character_select_state
 
     mouse_x, mouse_y = pygame.mouse.get_pos() 
     click = False
@@ -831,7 +872,7 @@ def mode_select_menu():
 
     button_color = RED 
     if ai_rect.collidepoint((mouse_x, mouse_y)):
-        button_color = (255, 100, 100)
+        button_color = (255, 100, 100) 
         if click:
             selected_mode = 'ai'
             current_scene = "game"
@@ -848,8 +889,8 @@ def mode_select_menu():
         button_color = CYAN
         if click:
             selected_mode = 'pvp' 
-            current_scene = "game"
-            reset_game_state(keep_stats=True) 
+            current_scene = "character_select" 
+            character_select_state = initial_char_select_state.copy() 
             return 
 
     pygame.draw.rect(screen, button_color, player_rect, border_radius=10)
@@ -866,6 +907,129 @@ def mode_select_menu():
 
     pygame.draw.rect(screen, button_color, back_rect, border_radius=10)
     draw_text("BACK", 36, BLACK, center_x, back_y)
+
+    pygame.display.flip()
+
+def character_select_scene():
+    """Renders the PvP character selection screen."""
+    global current_scene, running, character_select_state
+
+    mouse_x, mouse_y = pygame.mouse.get_pos()
+    click = False
+
+    GRID_START_X = 50
+    GRID_START_Y = 150
+    CUBE_DISPLAY_SIZE = 80
+    PADDING = 25
+    COLUMNS = 4 
+
+    button_width, button_height = 250, 60
+    start_game_rect = pygame.Rect(WIDTH // 2 - button_width // 2, HEIGHT - 80, button_width, button_height)
+
+    character_select_state['cube_rects'] = [] 
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1: 
+                click = True
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            current_scene = "mode_select" 
+            character_select_state = initial_char_select_state.copy() 
+            return
+
+    screen.fill(BLACK) 
+
+    draw_text("CHARACTER SELECT", 60, WHITE, WIDTH // 2, 40)
+
+    instruction_text = ""
+    instruction_color = WHITE
+    if character_select_state['current_player'] == 'P1':
+        instruction_text = "PLAYER 1: CHOOSE YOUR CUBE"
+        instruction_color = BLUE
+    elif character_select_state['current_player'] == 'P2':
+        instruction_text = "PLAYER 2: CHOOSE YOUR CUBE"
+        instruction_color = RED
+    elif character_select_state['current_player'] == 'START':
+        instruction_text = "BOTH PLAYERS SELECTED"
+        instruction_color = GREEN
+
+    draw_text(instruction_text, 40, instruction_color, WIDTH // 2, 90)
+
+    hovered_cube_index = -1
+    for i, cube in enumerate(all_cubes_data):
+        col = i % COLUMNS
+        row = i // COLUMNS
+
+        x_pos = GRID_START_X + col * (CUBE_DISPLAY_SIZE + PADDING)
+        y_pos = GRID_START_Y + row * (CUBE_DISPLAY_SIZE + PADDING)
+
+        cube_rect = draw_cube_preview(x_pos, y_pos, cube['color'], size=CUBE_DISPLAY_SIZE)
+        character_select_state['cube_rects'].append(cube_rect)
+
+        if cube_rect.collidepoint((mouse_x, mouse_y)):
+            hovered_cube_index = i
+
+        border_width = 5
+
+        if cube['id'] == character_select_state['p1_selection_id']:
+            pygame.draw.rect(screen, BLUE, cube_rect, border_width, border_radius=5)
+
+        elif cube['id'] == character_select_state['p2_selection_id']:
+            pygame.draw.rect(screen, RED, cube_rect, border_width, border_radius=5)
+
+        elif i == hovered_cube_index:
+             pygame.draw.rect(screen, GRAY, cube_rect, border_width, border_radius=5)
+
+    if click:
+        clicked_on_cube = False
+        for i, rect in enumerate(character_select_state['cube_rects']):
+            if rect.collidepoint((mouse_x, mouse_y)):
+                clicked_on_cube = True
+                selected_cube = all_cubes_data[i]
+
+                is_taken = False
+                if character_select_state['current_player'] == 'P1':
+                    is_taken = (selected_cube['id'] == character_select_state['p2_selection_id'])
+                elif character_select_state['current_player'] == 'P2':
+                     is_taken = (selected_cube['id'] == character_select_state['p1_selection_id'])
+
+                if not is_taken:
+
+                    if selected_cube['id'] > 2:
+                        character_select_state['message'] = "First 2 cubes work but rest are only placeholders"
+                    else:
+
+                        character_select_state['message'] = "" 
+
+                    if character_select_state['current_player'] == 'P1':
+                        character_select_state['p1_selection_id'] = selected_cube['id']
+                        character_select_state['current_player'] = 'P2'
+                    elif character_select_state['current_player'] == 'P2':
+                        character_select_state['p2_selection_id'] = selected_cube['id']
+                        character_select_state['current_player'] = 'START' 
+
+                break 
+
+        if character_select_state['current_player'] == 'START':
+            if start_game_rect.collidepoint((mouse_x, mouse_y)):
+
+                current_scene = "game"
+                reset_game_state(keep_stats=True) 
+                return
+
+    if character_select_state['message']:
+        draw_text(character_select_state['message'], 28, RED, WIDTH // 2, HEIGHT - 120)
+
+    if character_select_state['current_player'] == 'START':
+        button_color = DARK_GRAY
+        if start_game_rect.collidepoint((mouse_x, mouse_y)):
+            button_color = GRAY
+
+        pygame.draw.rect(screen, button_color, start_game_rect, border_radius=10)
+        draw_text("START GAME", 36, BLACK, start_game_rect.centerx, start_game_rect.centery)
 
     pygame.display.flip()
 
@@ -923,7 +1087,7 @@ def main_menu():
 
     button_color = PINK 
     if achievements_rect.collidepoint((mouse_x, mouse_y)):
-        button_color = (255, 100, 150)
+        button_color = (255, 100, 150) 
         if click:
             current_scene = "achievements" 
             return 
@@ -959,7 +1123,7 @@ def collected_cubes_scene():
     PADDING = 20
     COLUMNS = 3
 
-    cube_rects = []
+    cube_rects = [] 
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -970,7 +1134,7 @@ def collected_cubes_scene():
                 click = True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             current_scene = "menu"
-            selected_cube_data = None
+            selected_cube_data = None 
             return
 
     screen.fill(BLACK) 
@@ -1005,19 +1169,33 @@ def collected_cubes_scene():
         if selected_cube_data and cube['id'] == selected_cube_data['id']:
             pygame.draw.rect(screen, BRIGHT_GREEN, cube_rect, 5, border_radius=5)
 
-        draw_text(f"ID: {cube['id']}", 24, WHITE, x_pos + CUBE_DISPLAY_SIZE // 2, y_pos + CUBE_DISPLAY_SIZE + 5)
-
     if click:
-        for i, rect in enumerate(cube_rects):
-            if rect.collidepoint((mouse_x, mouse_y)):
-                selected_cube_data = all_cubes_data[i]
-                print(f"Selected Cube {selected_cube_data['id']}")
-                break
+        clicked_on_panel = False
+
+        if selected_cube_data:
+            PANEL_WIDTH = 300
+            PANEL_X = WIDTH - PANEL_WIDTH - 20
+            panel_rect = pygame.Rect(PANEL_X, 80, PANEL_WIDTH, HEIGHT - 120)
+            if panel_rect.collidepoint((mouse_x, mouse_y)):
+                clicked_on_panel = True
+
+        if not clicked_on_panel:
+            clicked_on_cube = False
+            for i, rect in enumerate(cube_rects):
+                if rect.collidepoint((mouse_x, mouse_y)):
+                    selected_cube_data = all_cubes_data[i]
+                    print(f"Selected Cube {selected_cube_data['id']}")
+                    clicked_on_cube = True
+                    break
+
+            if not clicked_on_cube:
+                selected_cube_data = None
 
     if selected_cube_data:
         draw_cube_detail_panel(selected_cube_data)
     else:
-        draw_text("Click a Cube to View Details", 36, DARK_GRAY, WIDTH * 0.75, HEIGHT // 2)
+
+        draw_text("Click a Cube to View Details", 36, DARK_GRAY, WIDTH * 0.7, HEIGHT // 2)
 
     pygame.display.flip()
 
@@ -1080,6 +1258,7 @@ def check_debug_file():
                     print(f"Debug Mode Toggled: {is_debug_mode}")
                 return is_debug_mode
         else:
+
             if is_debug_mode:
                 is_debug_mode = False
                 print("Debug Mode Toggled: False (File removed)")
@@ -1094,6 +1273,9 @@ def handle_player_movement(cube_color, keys, current_move_speed):
     """Handles movement for a single player."""
 
     if cube_color == 'blue':
+
+        if game_state['game_over']:
+             return
 
         dx, dy = 0, 0
         if keys[pygame.K_a]:
@@ -1118,7 +1300,7 @@ def handle_player_movement(cube_color, keys, current_move_speed):
     elif cube_color == 'red' and selected_mode == 'pvp':
 
         ai_is_stuck = game_state['red_cube_mode'] in ["Parried (Stun)", "Charge (Endlag)", "Charge (Windup)", "Beam (Windup)"]
-        if ai_is_stuck:
+        if ai_is_stuck or game_state['game_over']:
              return 
 
         dx, dy = 0, 0
@@ -1128,7 +1310,6 @@ def handle_player_movement(cube_color, keys, current_move_speed):
         if keys[pygame.K_RIGHT]:
             dx += current_move_speed
             game_state['ai_last_direction'] = 'right' 
-
         if keys[pygame.K_UP]:
             dy -= current_move_speed
             game_state['ai_last_direction'] = 'up'
@@ -1146,6 +1327,7 @@ def initiate_red_cube_charge_pvp():
     """Triggers the Red Cube's charge attack in PvP mode."""
     if not game_state['blue_active']:
         return
+
     if not game_state['red_active'] or game_state['charge_state'] != 'Idle' or game_state['ai_attack_state'] != 'Idle':
         return 
 
@@ -1154,11 +1336,17 @@ def initiate_red_cube_charge_pvp():
     game_state['flash_timer'] = FLASH_DURATION_MS 
 
     red_x, red_y = game_state['red_x'], game_state['red_y']
-    target_x, target_y = game_state['blue_x'], game_state['blue_y']
 
-    dx = (target_x + CUBE_SIZE / 2) - (red_x + CUBE_SIZE / 2)
-    dy = (target_y + CUBE_SIZE / 2) - (red_y + CUBE_SIZE / 2)
-    angle = math.atan2(dy, dx)
+    direction = game_state['ai_last_direction']
+    angle = 0.0
+    if direction == 'left':
+        angle = math.pi 
+    elif direction == 'right':
+        angle = 0 
+    elif direction == 'up':
+        angle = -math.pi / 2 
+    elif direction == 'down':
+        angle = math.pi / 2 
 
     game_state['charge_dx'] = math.cos(angle)
     game_state['charge_dy'] = math.sin(angle)
@@ -1181,6 +1369,10 @@ while running:
         mode_select_menu()
         continue
 
+    if current_scene == "character_select":
+        character_select_scene()
+        continue
+
     if current_scene == "collected_cubes":
         collected_cubes_scene()
         continue
@@ -1200,14 +1392,12 @@ while running:
         if event.type == pygame.KEYDOWN:
 
             if game_state['blue_active'] and not game_state['game_over']:
-
                 if event.key == pygame.K_SPACE: 
                     do_special_attack_blue()
                 if event.key == pygame.K_f: 
                     initiate_parry()
 
             if selected_mode == 'pvp' and game_state['red_active'] and not game_state['game_over']:
-
                 if event.key == pygame.K_l: 
                     do_special_attack_red()
                 if event.key == pygame.K_k: 
@@ -1224,7 +1414,6 @@ while running:
                  print("Returning to Main Menu.")
 
     if game_state['game_over']:
-
         screen.fill(WHITE)
         draw_health_bars()
 
@@ -1240,10 +1429,8 @@ while running:
         continue 
 
     current_move_speed = game_state.get('move_speed', MOVE_SPEED)
-
     if game_state['blue_active']:
         handle_player_movement('blue', keys, current_move_speed)
-
     if selected_mode == 'pvp' and game_state['red_active']:
         handle_player_movement('red', keys, current_move_speed)
 
@@ -1268,7 +1455,10 @@ while running:
             game_state['special_attack_cooldown_timer'] = 0
 
     if game_state['ai_special_attack_cooldown_timer'] > 0:
-        game_state['ai_special_attack_cooldown_timer'] -= dt
+        if not is_debug_mode:
+            game_state['ai_special_attack_cooldown_timer'] -= dt
+        else:
+            game_state['ai_special_attack_cooldown_timer'] = 1 
         if game_state['ai_special_attack_cooldown_timer'] < 0:
             game_state['ai_special_attack_cooldown_timer'] = 0
 
@@ -1285,7 +1475,7 @@ while running:
                 if check_ai_special_attack_trigger(distance_to_player) and game_state['charge_state'] == 'Idle':
                     initiate_ai_special_attack_windup()
 
-            elif game_state['ai_attack_state'] == 'SpecialWindup' and not ai_is_stuck: 
+            elif game_state['ai_attack_state'] == 'SpecialWindup': 
 
                 game_state['flash_timer'] -= dt
 
@@ -1293,9 +1483,9 @@ while running:
                     game_state['flash_count'] += 1
 
                     if game_state['flash_count'] > (AI_SLASH_FLASH_CYCLES * 2) + 1:
-                        execute_ai_special_attack()
+                        execute_ai_special_attack() 
                     else:
-                        game_state['flash_timer'] = AI_FLASH_DURATION_MS
+                        game_state['flash_timer'] = AI_FLASH_DURATION_MS 
 
                 target_x, target_y = game_state['blue_x'], game_state['blue_y']
                 red_center_x = game_state['red_x'] + CUBE_SIZE / 2
@@ -1306,15 +1496,13 @@ while running:
 
                 game_state['red_cube_mode'] = "Beam (Windup)" 
 
-            if game_state['ai_attack_state'] == 'Idle' and not ai_is_stuck:
+            if game_state['ai_attack_state'] == 'Idle' and not ai_is_stuck: 
 
                 if game_state['charge_state'] == 'Idle':
 
                     if random.random() < CHARGE_INITIATE_CHANCE:
-
                         game_state['charge_state'] = 'Windup'
                         game_state['flash_count'] = 0
-
                         game_state['flash_timer'] = FLASH_DURATION_MS 
 
                         dx = target_x - game_state['red_x']
@@ -1324,7 +1512,6 @@ while running:
                         game_state['charge_dy'] = math.sin(angle)
 
                         game_state['red_cube_mode'] = "Charge (Windup)" 
-
                     else:
 
                         new_red_x, new_red_y, new_mode = move_ai(
@@ -1343,6 +1530,7 @@ while running:
                             game_state['red_cube_mode'] = new_mode
 
                 elif game_state['charge_state'] == 'Windup':
+
                     game_state['flash_timer'] -= dt
 
                     flash_end_count = (CHARGE_FLASH_CYCLES * 2)
@@ -1355,26 +1543,23 @@ while running:
                         else:
                             game_state['flash_timer'] = FLASH_DURATION_MS
 
-                    game_state['red_cube_mode'] = "Charge (Windup)"
+                    game_state['red_cube_mode'] = "Charge (Windup)" 
 
                 elif game_state['charge_state'] == 'Charging':
                     game_state['red_cube_mode'] = "Charge"
 
                     move_x = game_state['charge_dx'] * CHARGE_SPEED
                     move_y = game_state['charge_dy'] * CHARGE_SPEED
-
                     new_x = game_state['red_x'] + move_x
                     new_y = game_state['red_y'] + move_y
 
                     hit_boundary = False
-
                     if new_x <= 0 or new_x >= WIDTH - CUBE_SIZE:
                         hit_boundary = True
-                        new_x = max(0, min(new_x, WIDTH - CUBE_SIZE))
-
+                        new_x = max(0, min(new_x, WIDTH - CUBE_SIZE)) 
                     if new_y <= 0 or new_y >= HEIGHT - CUBE_SIZE:
                         hit_boundary = True
-                        new_y = max(0, min(new_y, HEIGHT - CUBE_SIZE))
+                        new_y = max(0, min(new_y, HEIGHT - CUBE_SIZE)) 
 
                     game_state['red_x'] = new_x
                     game_state['red_y'] = new_y
@@ -1385,17 +1570,15 @@ while running:
                         game_state['red_cube_mode'] = "Charge (Endlag)"
 
                 elif game_state['charge_state'] == 'Endlag':
-                    game_state['endlag_timer'] -= dt 
 
+                    game_state['endlag_timer'] -= dt 
                     if game_state['endlag_timer'] <= 0:
                         game_state['charge_state'] = 'Idle'
-                        game_state['red_cube_mode'] = "Maintain"
+                        game_state['red_cube_mode'] = "Maintain" 
                     else:
-                        game_state['red_cube_mode'] = "Charge (Endlag)"
+                        game_state['red_cube_mode'] = "Charge (Endlag)" 
 
         elif selected_mode == 'pvp':
-
-            ai_is_stuck = game_state['red_cube_mode'] in ["Parried (Stun)", "Charge (Endlag)", "Charge (Windup)", "Beam (Windup)"]
 
             if game_state['ai_attack_state'] == 'SpecialWindup': 
 
@@ -1407,19 +1590,12 @@ while running:
                     if game_state['flash_count'] > (AI_SLASH_FLASH_CYCLES * 2) + 1:
                         execute_ai_special_attack_red() 
                     else:
-                        game_state['flash_timer'] = AI_FLASH_DURATION_MS
-
-                target_x, target_y = game_state['blue_x'], game_state['blue_y']
-                red_center_x = game_state['red_x'] + CUBE_SIZE / 2
-                red_center_y = game_state['red_y'] + CUBE_SIZE / 2
-                dx = target_x + CUBE_SIZE / 2 - red_center_x
-                dy = target_y + CUBE_SIZE / 2 - red_center_y
-                target_angle = math.atan2(dy, dx)
-                game_state['ai_beam_angle'] = target_angle 
+                        game_state['flash_timer'] = AI_FLASH_DURATION_MS 
 
                 game_state['red_cube_mode'] = "Beam (Windup)" 
 
             elif game_state['charge_state'] == 'Windup': 
+
                 game_state['flash_timer'] -= dt
 
                 flash_end_count = (P2_CHARGE_FLASH_CYCLES * 2) 
@@ -1430,28 +1606,25 @@ while running:
                         game_state['charge_state'] = 'Charging'
                         game_state['red_cube_mode'] = "Charge"
                     else:
-                        game_state['flash_timer'] = FLASH_DURATION_MS
+                        game_state['flash_timer'] = FLASH_DURATION_MS 
 
-                game_state['red_cube_mode'] = "Charge (Windup)"
+                game_state['red_cube_mode'] = "Charge (Windup)" 
 
             elif game_state['charge_state'] == 'Charging': 
                 game_state['red_cube_mode'] = "Charge"
 
                 move_x = game_state['charge_dx'] * (CHARGE_SPEED * 1.5)
                 move_y = game_state['charge_dy'] * (CHARGE_SPEED * 1.5)
-
                 new_x = game_state['red_x'] + move_x
                 new_y = game_state['red_y'] + move_y
 
                 hit_boundary = False
-
                 if new_x <= 0 or new_x >= WIDTH - CUBE_SIZE:
                     hit_boundary = True
-                    new_x = max(0, min(new_x, WIDTH - CUBE_SIZE))
-
+                    new_x = max(0, min(new_x, WIDTH - CUBE_SIZE)) 
                 if new_y <= 0 or new_y >= HEIGHT - CUBE_SIZE:
                     hit_boundary = True
-                    new_y = max(0, min(new_y, HEIGHT - CUBE_SIZE))
+                    new_y = max(0, min(new_y, HEIGHT - CUBE_SIZE)) 
 
                 game_state['red_x'] = new_x
                 game_state['red_y'] = new_y
@@ -1467,29 +1640,36 @@ while running:
                     game_state['red_cube_mode'] = "Charge (Endlag)"
 
             elif game_state['charge_state'] == 'Endlag':
-                game_state['endlag_timer'] -= dt 
 
+                game_state['endlag_timer'] -= dt 
                 if game_state['endlag_timer'] <= 0:
                     game_state['charge_state'] = 'Idle'
-                    game_state['red_cube_mode'] = "Maintain"
+                    game_state['red_cube_mode'] = "Maintain" 
                 else:
-                    game_state['red_cube_mode'] = "Charge (Endlag)"
+                    game_state['red_cube_mode'] = "Charge (Endlag)" 
 
         if game_state['ai_cyan_beam_active']:
             game_state['ai_hitbox_timer'] -= dt
 
-            if game_state['ai_hitbox_timer'] > 0 and selected_mode == 'pvp':
+            if selected_mode == 'ai':
+                if game_state['ai_hitbox_timer'] <= 0:
+                    game_state['ai_cyan_beam_active'] = False
+                    game_state['ai_beam_angle'] = 0.0
 
-                target_x, target_y = game_state['blue_x'], game_state['blue_y']
-                red_center_x = game_state['red_x'] + CUBE_SIZE / 2
-                red_center_y = game_state['red_y'] + CUBE_SIZE / 2
-                dx = target_x + CUBE_SIZE / 2 - red_center_x
-                dy = target_y + CUBE_SIZE / 2 - red_center_y
-                target_angle = math.atan2(dy, dx)
-                game_state['ai_beam_angle'] = target_angle
-            else:
-                game_state['ai_cyan_beam_active'] = False
-                game_state['ai_beam_angle'] = 0.0
+            elif selected_mode == 'pvp':
+                if game_state['ai_hitbox_timer'] > 0:
+
+                    target_x, target_y = game_state['blue_x'], game_state['blue_y']
+                    red_center_x = game_state['red_x'] + CUBE_SIZE / 2
+                    red_center_y = game_state['red_y'] + CUBE_SIZE / 2
+                    dx = target_x + CUBE_SIZE / 2 - red_center_x
+                    dy = target_y + CUBE_SIZE / 2 - red_center_y
+                    target_angle = math.atan2(dy, dx)
+                    game_state['ai_beam_angle'] = target_angle
+                else:
+
+                    game_state['ai_cyan_beam_active'] = False
+                    game_state['ai_beam_angle'] = 0.0
 
     is_charging = game_state['charge_state'] == 'Charging'
 
@@ -1515,7 +1695,7 @@ while running:
     if game_state['blue_health'] <= 0:
         if game_state['blue_active']:
             print("Blue Cube Defeated!")
-            cube_stats['red_kills'] += 1
+            cube_stats['red_kills'] += 1 
             save_stats(cube_stats)
         game_state['blue_active'] = False
         game_state['game_over'] = True
@@ -1523,7 +1703,7 @@ while running:
     if game_state['red_health'] <= 0:
         if game_state['red_active']:
             print("Red Cube Defeated!")
-            cube_stats['blue_kills'] += 1
+            cube_stats['blue_kills'] += 1 
             save_stats(cube_stats)
 
             if is_debug_mode and selected_mode == 'ai': 
@@ -1537,10 +1717,11 @@ while running:
                 game_state['ai_attack_state'] = 'Idle'
                 game_state['ai_special_attack_cooldown_timer'] = 0
             else:
+
                 game_state['red_active'] = False
                 game_state['game_over'] = True
 
-    screen.fill(WHITE)
+    screen.fill(WHITE) 
 
     if game_state['blue_active']:
         blue_cube_color = get_blue_cube_color(game_state)
@@ -1559,7 +1740,7 @@ while running:
         red_cube_color = get_red_cube_color(game_state)
         draw_cube(game_state['red_x'], game_state['red_y'], red_cube_color)
 
-    pygame.display.flip()
+    pygame.display.flip() 
 
 pygame.quit()
 sys.exit()
