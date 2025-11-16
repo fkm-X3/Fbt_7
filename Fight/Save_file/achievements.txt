@@ -1,16 +1,16 @@
-achievemnt 1 "test achivemnt"
-    des: "unlocked example achivemnt"
+achievemnt 1 "vs code gamer"
+    des: "play during the dev stage of the game"
+    unlocks: "Retrosloppy"
+    status: unlocked
+
+achievement 2 "sand man"
+    des: "install the game through github"
     unlocks: "debug mode"
     status: unlocked
 
-achievement 2 "2nd test achivemnt"
-    des: "locked example achivment"
-    unlocks: "fkm-X3"
-    status: locked
-
 achievement 3 "im not gonna sugar coat it"
-    des: "parry any attack and follow it up with a slash"
-    unlocks: "guest 1337 cube"
+    des: "parry any attack and follow it up with one of your own"
+    unlocks: "block+punch cube"
     status: locked
 
 achievment 4 "filled with determination"
