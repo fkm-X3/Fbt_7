@@ -1,34 +1,48 @@
 cube 1 stats:
+    short_hand: cube1
+    name: sword master
     color: blue
     attack: slash, parry
     max hp: 100
 
 cube 2 stats:
+    short_hand: cube2
+    name: angry sniper
     color: red
     attacks: charge, laser(windup)
     max hp: 100 
 
 cube 3 stats:
+    short_hand: cube3
+    name: sniper cube
     color: green
     attacks: slash, laser(windup)
     max hp: 100 
 
 cube 4 stats:
+    short_hand: cube4
+    name: magic cube
     color: pink
     attacks: block(bar), slash
     max hp: 100
 
 cube 5 stats:
+    short_hand: cube5
+    name: the jorker
     color: brown
     attacks: kick, laser (windup)
     max hp: 75
 
 cube 6 stats:
+    short_hand: cube6
+    name: ima touch you
     color: dark blue
     attacks: pull (invert controls during pull 3 sec), slash
     max hp: 75
 
 cube 7 stats:
-    color: rainbow (slowly changing gradient)
+    short_hand: dev cube
+    name: dev cube
+    color: <undefined>
     attacks: purple cube, code execute, 67 errors, parry
     max hp: 150
