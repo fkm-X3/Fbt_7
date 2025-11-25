@@ -1,3 +1,5 @@
+# currently 1748 lines in this file :sob:
+
 import pygame
 import random
 import sys
