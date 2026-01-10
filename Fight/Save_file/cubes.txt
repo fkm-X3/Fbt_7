@@ -39,10 +39,3 @@ cube 6 stats:
     color: dark blue
     attacks: pull (invert controls during pull 3 sec), slash
     max hp: 75
-
-cube 7 stats:
-    short_hand: dev cube
-    name: dev cube
-    color: <undefined>
-    attacks: purple cube, code execute, 67 errors, parry
-    max hp: 150

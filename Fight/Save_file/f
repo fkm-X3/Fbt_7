@@ -1,0 +1,6 @@
+cube 7 stats:
+    short_hand: dev cube
+    name: dev cube
+    color: <undefined>
+    attacks: purple cube, code execute, 67 errors, parry
+    max hp: 150
